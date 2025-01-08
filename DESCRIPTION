@@ -1,5 +1,5 @@
-Package: GenomicsHelper
-Title: Helper functions for Genomics
+Package: gaudi
+Title: R toolkit for microbial genomics
 Version: 0.0.0.9000
 Authors@R: 
     person(given = "Oliver",
