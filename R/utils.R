@@ -1,5 +1,11 @@
 #' Find NCBI database entries for a topic per year
-entrez_search_count_by_year <- function(db='pubmed', year=NULL, term=NULL){
+#' 
+#' @param db NCBI database to query
+#' @param year Year to search entries for
+#' @param term Search term
+#' 
+#' @export 
+entrez_search_count_by_year <- function(db='nuccore', year=NULL, term=NULL){
 
     stopifnot(
         !is.null(year),
