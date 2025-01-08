@@ -14,7 +14,7 @@ entrez_search_count_by_year <- function(db='nuccore', year=NULL, term=NULL){
     
     # Run NCBI query
     query <- paste(term, "AND (", year, "[PDAT])")
-    result <- entrez_search(db=db, term=query, retmax=0)$count
+    result <- rentrez::entrez_search(db=db, term=query, retmax=0)$count
 
     return(result)
 }
