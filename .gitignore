@@ -21,6 +21,9 @@
 # RStudio files
 .Rproj.user/
 
+# Jupyter files
+R/.ipynb_checkpoints/
+
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
