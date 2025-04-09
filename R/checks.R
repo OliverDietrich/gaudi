@@ -1,0 +1,150 @@
+#' Check if program is installed on the system
+#'
+#' Helper function to determine if programs are installed (available) on the system.
+#' Missing programs lead to an error that are intended to break higher-level functions.
+#' 
+#' @param program Name of the program
+#' @param silent Whether to report what is found
+#' 
+#' @export
+check_installed <- function(program=NULL, silent=FALSE) {
+
+    # Check input
+    stopifnot(
+        !is.null(program),
+        class(program) == 'character'
+    )
+
+    # Detect missing programs
+    PATH <- Sys.which(program)
+    index <- PATH == ''
+    if (any(index)) {
+        missing <-names(PATH[which(index)])
+        msg <- paste('Programs missing. Not found:', paste(missing, collapse=', '))
+        stop(msg)
+    } else if (silent) {
+    } else {
+        msg <- paste('All programs installed. Found:',paste(names(PATH), collapse=', '))
+        message(msg)
+    }
+}
+
+#' Check program version
+#' 
+#' @param program Name of the program
+#'
+#' @export
+check_version <- function(program=NULL) {
+    
+    # Minimal check
+    stopifnot(
+        !is.null(program),
+        class(program) == 'character',
+        length(program) == 1
+    )
+
+    # Exceptions
+    exceptions <- list(
+        'dataformat' = 'dataformat version'
+    )
+
+    # Version command
+    cmd <- paste(program,'--version','2>&1')
+    if (program %in% names(exceptions)) {
+        cmd <- exceptions[[program]]
+    }
+    version <- system(cmd, intern=TRUE)
+
+    # Exit 2
+    if (length(version) == 0) {
+        return()
+    }
+    if (length(version) > 1) {
+        version <- paste(version, collapse='\n')
+    }
+    
+    # Return
+    if (stringr::str_detect(version, program)) {
+        msg <- version
+    } else {
+        msg <- paste(program,version)
+    }
+    message(msg)
+}
+
+#' Check output file
+#'
+#' Helper function to determine if an output file exists.
+# ...
+
+#' Check output directory
+#'
+#' Helpter function to determine if an output directory exists or should be created
+
+#' Detect the number of processing units available
+#' 
+#' @export
+n_proc <- function() {
+
+    # Check program
+    check_installed('nproc', silent=TRUE)
+
+    # Call
+    n <- system('nproc', intern=TRUE)
+
+    # Format
+    n <- as.numeric(n)
+    
+    return(n)    
+}
+
+#' Check FASTQ formatting
+#'
+#' @param file File name
+#' @param suffix List of allowed file suffixes
+#'
+#' @export
+is_valid_fastq <- function(file=NULL, 
+                           suffix=c('.fastq','.fastq.gz'),
+                           multiple=FALSE
+                          ) {
+
+    stopifnot(
+        !is.null(file)        
+    )
+
+    # Checks
+    N <- length(file)
+    if (N > 1) {
+        msg <- paste(N,'files supplied.')
+        if (multiple) {
+            warning(msg)
+        } else (
+            stop(msg)
+        )
+    }
+
+    ## In-memory FASTQ (class ShortReadQ)
+
+    ## File presence
+    index <- !file.exists(file)
+    if (any(index)) {
+        index <- which(!file.exists(file))
+        msg <- paste('File(s)',paste(file[index],sep=', '),'do(es) not exist.')
+        warning(msg)
+        return(FALSE)
+    }
+
+    ## File name
+    index <- endsWith(file, suffix)
+    if (!any(index)) {
+        msg <- paste('File(s) do(es) not end with an accepted suffix.')
+        warning(msg)
+        return(FALSE)
+    }
+
+    ## Add more sophisticated checks ...
+
+    # Exit 0
+    return(TRUE)
+}
