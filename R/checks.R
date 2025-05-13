@@ -98,6 +98,49 @@ n_proc <- function() {
     return(n)    
 }
 
+#' Check if object refers to a single file
+#'
+#' @param file_name Character, file path
+#' @param suffix Character, file extension (e.g. '.csv','.fasta')
+#' @param silent Boolean, whether to print warnings
+#'
+#' @export
+is_file <- function(file_name=NULL, suffix=NULL, silent=FALSE) {
+
+    # Minimal check
+    stopifnot(
+        !is.null(file_name)
+    )
+
+    # Ensure single file name
+    if (length(file_name) < 1) {
+        msg <- 'Incorrect file specification: object of length 0.'
+        if (!silent) warning(msg)
+        return(FALSE)
+    }
+    if (class(file_name) != 'character') {
+        msg <- 'Incorrect file specification: object not a character vector.'
+        return(FALSE)
+    }
+    if (length(file_name) > 1) {
+        msg <- 'Incorrect file specification: object length > 1.'
+        return(FALSE)
+    }
+
+    # Check suffix
+    if (!is.null(suffix)) {
+        index <- endsWith(file_name, suffix)
+        if (!any(index)) {
+            msg <- paste('File',file_name,'does not carry the extension',paste(suffix, collapse=', '))
+            if (!silent) warning(msg)
+            return(FALSE)
+        }
+    }
+
+    # Return TRUE
+    if (file.exists(file_name)) return(TRUE) else return(FALSE)
+}
+
 #' Check FASTQ formatting
 #'
 #' @param file File name

@@ -14,8 +14,9 @@
 #' 
 #' @export
 ncbi_genome_summary <- function(dirname='data/',
-                                refseq='refseq_assembly_summary.txt',
-                                genbank='genbank_assembly_summary.txt',
+                                summary = 'data/ncbi_genome_summary.tsv',
+                                refseq='refseq_assembly_summary.tsv',
+                                genbank='genbank_assembly_summary.tsv',
                                 url_refseq='ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt',
                                 url_genbank='ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt',
                                 max.download.minutes = 30,
@@ -33,6 +34,12 @@ ncbi_genome_summary <- function(dirname='data/',
     stopifnot(
         is.numeric(max.download.seconds)
     )
+
+    # Exit 1
+    if (file.exists(summary)) {
+        object <- vroom::vroom(summary, show_col_types=FALSE)
+        return(object)
+    }
 
     # Modify file names
     genbank <- paste0(dirname,genbank)
@@ -57,12 +64,12 @@ ncbi_genome_summary <- function(dirname='data/',
     ## Refseq
     msg <- paste('Reading',refseq)
     message(msg)
-    object$refseq <- readr::read_tsv(refseq, skip=1, show_col_types = FALSE)
+    object$refseq <- vroom::vroom(refseq, skip=1, show_col_types = FALSE)
 
     ## Genbank
     msg <- paste('Reading',genbank)
     message(msg)
-    object$genbank <- readr::read_tsv(genbank, skip=1, show_col_types=FALSE)
+    object$genbank <- vroom::vroom(genbank, skip=1, show_col_types=FALSE)
 
     # Add source, harmonize vector classes
     for (i in names(object)) {
@@ -78,16 +85,111 @@ ncbi_genome_summary <- function(dirname='data/',
     # Re-name columns
     object$Assembly.version <- object$`#assembly_accession`
 
-    # Add Accession.version
-    # ... 
-    # id_file <- tempfile()
-    # ids <- object$Assembly.version
-    # writeLines(ids,id_file)
-    #  datasets summary genome accession GCF_000001405.40 --report sequence --as-json-lines | dataformat tsv genome-seq
-
+    # Write cleaned summary
+    vroom::vroom_write(object, summary)
+    
     # Return object & summary
     print(str(object, max.level = 0))
     return(object)
+}
+
+#' Download genome sequence data from NCBI using Assembly.version IDs
+#'
+#' Wrapper for the NCBI datasets CLI
+#' Based on the call 'datasets download genome accession' it retrieves sequence data
+#' for Assembly.version numbers. Checks determine completeness of the downloaded data.
+#' 
+#' @param accession Character vector with Assembly.version numbers
+#' @param inputfile File with accession numbers (one per line)
+#' 
+#' @export
+ncbi_datasets_download_genome <- function(Assembly.version = NULL,
+                                          out.dir = NULL,
+                                          overwrite=FALSE
+                                         ) {
+
+    # Minimal check
+    stopifnot(
+        !is.null(Assembly.version),
+        !is.null(out.dir)
+    )
+    check_installed('datasets', silent=TRUE)
+    check_version('datasets')
+
+    # Create file names/paths
+    download.log <- paste0(out.dir,'download.log')
+    out.acc <- paste0(out.dir,'AssemblyVersion.txt')
+    out.zip <- paste0(out.dir,'ncbi_dataset.zip')
+    out.data <- paste0(out.dir,'ncbi_dataset/data/')
+    out.final <- paste0(out.dir,'assemblies/')
+    report.jsonl <- paste0(out.data,'assembly_data_report.jsonl')
+    report.tsv <- paste0(out.dir,'assembly_data_report.tsv')
+    acc.missing <- paste0(out.dir,'AssemblyVersion_missing.txt')
+    categories_genome <- c('genome','rna','protein','cds','gff3','gtf','gbff','seq-report') # Sequence types to include
+    
+    # Check input
+    if (length(Assembly.version) == 1 & all(file.exists(Assembly.version))) {
+        msg <- paste('Input via file:', Assembly.version)
+        message(msg)
+        out.acc <- Assembly.version
+        Assembly.version <- readLines(out.acc)
+    } else {
+        writeLines(Assembly.version, out.acc)
+    }
+
+    # Check output
+    if (!endsWith(out.dir,'/')) {
+        out.dir <- paste0(out.dir,'/')
+    }
+    if (dir.exists(out.final) & !overwrite) {
+        msg <- paste('Output directory',out.final,'exists.')
+        if (overwrite) {
+            msg <- paste(msg, 'Overwriting.')
+            warning(msg)
+            unlink(out.final, recursive=TRUE)
+        } else {
+            msg <- paste(msg, 'Aborting.')
+            warning(msg)
+            index <- Assembly.version %in% list.files(out.final)
+            tbl <- table('Genomes present:'=index)
+            return(tbl)
+        }
+    }
+
+    # Download dataset
+    cmd <- paste('datasets download genome accession','--inputfile',out.acc,'--include',paste(categories_genome,collapse=','),'--filename',out.zip,'2>&1')
+    message(cmd)
+    stdout <- system(cmd, intern=TRUE)
+    stdout <- paste(stdout,'\n')
+    writeLines(stdout, download.log)
+
+    # Extract archive
+    msg <- paste('Extracting data from',out.zip)
+    message(msg)
+    unzip(out.zip, exdir=out.dir)
+
+    # Re-format files
+    cmd <- paste('dataformat tsv genome','--inputfile',report.jsonl,'>',report.tsv,'2>&1')
+    message(cmd)
+    system(cmd)
+
+    # Move data
+    file.rename(out.data, out.final)
+
+    # Check md5sums
+    ## maybe sometime ...
+
+    ## Check completeness
+    index <- Assembly.version %in% list.files(out.final)
+    tbl <- table('Genomes present:'=index)
+
+    # Remove intermediates
+    if (all(index)) {
+        unlink(out.zip)
+        #unlink(dirname(out.data))
+    }
+    
+    return(tbl)
 }
 
 #' Summary of genomes present on NCBI
@@ -137,78 +239,45 @@ ncbi_datasets_summary_genome <- function(accession = NULL,
     return(object)
 }
 
-#' Download genome sequence data from NCBI using Assembly.version IDs
+#' List NCBI genome dataset files
 #'
-#' Wrapper for the NCBI datasets CLI
-#' Based on the call 'datasets download genome accession' it retrieves sequence data
-#' for Assembly.version numbers. Checks determine completeness of the downloaded data.
+#' List files of NCBI genomes by category (CDS, genome, gbff, gff, gtf, proteins, Other)
 #' 
-#' @param accession Character vector with Assembly.version numbers
-#' @param inputfile File with accession numbers (one per line)
+#' @param path Path to genome dataset (e.g. .../ncbi_dataset/data/GCA_000000000.1/)
 #' 
 #' @export
-ncbi_datasets_download_genome <- function(Assembly.version = NULL,
-                                          out.dir = NULL,
-                                          overwrite=FALSE
-                                         ) {
+ncbi_genome_files <- function(path = NULL
+                                ) {
 
     # Minimal check
     stopifnot(
-        !is.null(Assembly.version),
-        !is.null(out.dir)
+        !is.null(path)
     )
-    check_installed('datasets', silent=TRUE)
-    check_version('datasets')
 
-    # Create file names/paths
-    out.acc <- paste0(out.dir,'AssemblyVersion.txt')
-    out.zip <- paste0(out.dir,'ncbi_dataset.zip')
-    out.data <- paste0(out.dir,'ncbi_dataset/data/')
-    report.jsonl <- paste0(out.data,'assembly_data_report.jsonl')
-    report.tsv <- paste0(out.data,'assembly_data_report.tsv')
-    
     # Check input
-    if (length(Assembly.version) == 1 & all(file.exists(Assembly.version))) {
-        msg <- paste('Input via file:', Assembly.version)
-        message(msg)
-        out.acc <- Assembly.version
-    } else {
-        writeLines(Assembly.version, out.acc)
+    if (!endsWith(path,'/')) {
+        path <- paste0(path,'/')
     }
 
-    # Check output
-    if (!endsWith(out.dir,'/')) {
-        out.dir <- paste0(out.dir,'/')
-    }
-    if (dir.exists(out.data) & !overwrite) {
-        msg <- paste('Output directory',out.data,'exists.')
-        if (overwrite) {
-            msg <- paste(msg, 'Overwriting.')
-            warning(msg)
-        } else {
-            msg <- paste(msg, 'Aborting.')
-            warning(msg)
-            return('Exit 1: Output present.')
-        }
-    }
+    # List and categorize files
+    object <- list.files(path)
+    object <- data.frame(
+        'file' = object,
+        'type' = case_when(
+            object == 'cds_from_genomic.fna' ~ "CDS",
+            endsWith(object, '_genomic.fna') ~ "genome",
+            endsWith(object, '.gbff') ~ "gbff",
+            endsWith(object, 'gff') ~ "gff",
+            endsWith(object, '.gtf') ~ "gtf",
+            object == 'protein.faa' ~ "proteins",
+            .default = 'Other'
+        )
+    )
+    object$file <- paste0(path,object$file)
 
-    ## Sequence types to include
-    #categories_virus_genome <- c('genome','cds','protein','annotation','biosample') # ,'none'
-    categories_genome <- c('genome','rna','protein','cds','gff3','gtf','gbff','seq-report') # ,'none'
-
-    # Download dataset
-    cmd <- paste('datasets download genome accession',paste(Assembly.version,collapse=' '),'--include',paste(categories_genome,collapse=','),'--filename',out.zip,'2>&1')
-    cmd <- paste('datasets download genome accession','--inputfile',out.acc,'--include',paste(categories_genome,collapse=','),'--filename',out.zip,'2>&1')
-    message(cmd)
-    system(cmd, intern=TRUE)
-
-    # Extract archive
-    msg <- paste('Extracting data from',out.zip)
-    message(msg)
-    unzip(out.zip, exdir=out.dir)
-
-    # Re-format files
-    cmd <- paste('dataformat tsv genome','--inputfile',report.jsonl,'>',report.tsv,'2>&1')
-    message(cmd)
-    system(cmd, intern=TRUE)
+    # Pivot wider
+    object <- pivot_wider(object, names_from=type, values_from=file, values_fn = ~paste(.x, collapse=','))
+    
+    # Exit 0
+    return(object)
 }

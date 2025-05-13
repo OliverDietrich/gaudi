@@ -5,99 +5,80 @@
 #' @param input.sequence File path
 #' @param output.tsv File path
 #' @param k Integer, length of k-mer
-#' @param hash.size Integer, Initial hash size
+#' @param hash.size Character, Initial hash size (e.g. '100M')
 #' @param threads Integer, Number of threads
 #' 
 #' @export
-jellyfish_kmer_count <- function(input.sequence=NULL,
-                                 out.dir=NULL,
-                                 k = 32,
-                                 hash.size = 64,
-                                 threads = n_proc(),
-                                 remove.intermediates = TRUE
-                                ) {
+jellyfish_count_kmers <- function(input.sequence=NULL,
+                                  output.tsv=NULL,
+                                  temp.dir='tmp/jellyfish_count/',
+                                  k = 32,
+                                  hash.size = '100M',
+                                  threads = n_proc(),
+                                  remove.intermediates = TRUE
+                                 ) {
 
+    # Minimal check
     stopifnot(
-        !is.null(input.sequence),
-        !is.null(output.txt)
+        !is.null(input.sequence)
     )
     check_installed('jellyfish', silent=TRUE)
     check_version('jellyfish')
 
+    # Set variables
+    input_file <- paste0(temp.dir,'input_sequence.txt')
+    jf_file <- paste0(temp.dir,'mer_count.jf')
+    if (!is.null(output.tsv)) {
+        output_file <- output.tsv
+        if (file.exists(output.tsv)) {
+            msg <- paste('Output file',output.tsv,'already exists.')
+            warning(msg)
+            counts <- vroom::vroom(output.tsv, show_col_types=FALSE, col_names = c('kmer','count'))
+            counts <- setNames(counts$count, counts$kmer)
+            return(counts)
+        }
+    } else {
+        output_file <- paste0(temp.dir,'mer_count.tsv')
+    }
+
     # Check input
+    if (is_file(input.sequence)) {
+        input_file <- input.sequence
+    } else {
+        writeLines(input.sequence, input_file)
+    }
+    if (!is_file(input_file)) {
+        msg <- paste('Input file',input_file,'does not exist')
+        warning(msg)
+        return(NULL)
+    } else if (dir.exists(temp.dir)) {
+        msg <- paste('Temporary directory',temp.dir,'already exists. Consider cleaning up your working directory or specify a custom directory.')
+        warning(msg)
+    } else {
+        dir.create(temp.dir, recursive=TRUE)
+    }
 
     # Check output
 
-    # Run jellyfish
+    # Count k-mers
+    cmd <- paste('jellyfish','count','-m',k,'-s',hash.size,'-t',threads,' ',input_file,'-o',jf_file,'2>&1')
+    system(cmd, intern=TRUE)
+
+    # Dump counts to file
+    cmd <- paste('jellyfish','dump','-c',jf_file,'>',output_file,'2>&1')
+    stdout <- system(cmd, intern=TRUE)
+
+    # Read file
+    counts <- vroom::vroom(output_file, show_col_types=FALSE, col_names = c('kmer','count'))
+    counts <- setNames(counts$count, counts$kmer)
+
+    # Remove intermediates
+    if (remove.intermediates) {
+        unlink(temp.dir, recursive=TRUE)
+    }
 
     # Exit 0
     return(counts)
-}
-
-#' Count nucleotide k-mers using jellyfish
-#' 
-#' @param seq Nucleotide sequence(s) to count k-mers. Input must be character vector or list.
-#' @param k Size of k-mer
-#' @param threads Number of cores to use (default: all)
-#'
-#' @export 
-jellyfish_count_kmers <- function(
-    infile=NULL,
-    sequence=NULL, 
-    outfile=NULL,
-    k=31, 
-    threads=NULL,
-    return.counts=TRUE
-) {
-
-    # Minimal checks
-    stopifnot(
-        !is.null(sequence) | !is.null(infile)
-    )
-
-    ## Check input
-    if (is.null(outfile)) {
-        outfile <- tempfile(pattern = 'count.tsv')        
-    }
-
-    if (file.exists(infile)) {
-        fa_file <- sequence
-    } else {
-        fa_file <- tempfile(pattern = 'nucleotide.fa')
-        sequence <- rev(unlist(lapply(sequence, c, '> Any nucleotide sequence')))
-        writeLines(sequence, fa_file)
-    }
-
-    if (is.null(threads)) {
-        threads <- system('nproc', intern = TRUE)
-    }
-
-    # Variables
-    jf_file <- tempfile(pattern = 'count.jf')
-
-    # Nucleotide alphabet
-    # ...
-
-    # Count k-mers
-    cmd <- paste0("jellyfish count -m ",k," -s 100M -t ",threads," ", infile, " -o ", jf_file, ' 2>&1')
-    system(cmd, intern=TRUE)
-
-    # Convert jellyfish to tsv
-    cmd <- paste0("jellyfish dump -c ",jf_file, ' 2>&1') # ," > ",outfile
-    system(cmd, intern=TRUE)
-
-    # Read counts
-    counts <- data.table::fread(jf_tsv) # , col.names=c('kmer','freq')
-
-    # Exit
-    if (return.counts) {
-        return(counts)
-    } else {
-        msg <- paste0('Writing output file:', outfile)
-        message(msg)
-        
-        return(NULL)
-    }
 }
 
 #' Count k-mers using mercat2

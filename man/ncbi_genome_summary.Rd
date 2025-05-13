@@ -6,8 +6,9 @@
 \usage{
 ncbi_genome_summary(
   dirname = "data/",
-  refseq = "refseq_assembly_summary.txt",
-  genbank = "genbank_assembly_summary.txt",
+  summary = "data/ncbi_genome_summary.tsv",
+  refseq = "refseq_assembly_summary.tsv",
+  genbank = "genbank_assembly_summary.tsv",
   url_refseq = "ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt",
   url_genbank = "ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt",
   max.download.minutes = 30,

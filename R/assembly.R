@@ -2,14 +2,16 @@
 #'
 #' CLI wrapper for SKESA assembly from short reads
 #'
-#' @param
-#' @param
-#' @param
+#' @param input.1 Character, file name of forward paired-end reads
+#' @param input.2 Character, file name of reverse paired-end reads
+#' @param input.s Character, file name of unpaired reads
+#' @param threads Integer, number of threads to use
 #' @param overwrite Boolean, whether to overwrite output
 #'
 #' @export
 skesa_assembly <- function() {
 
+    # Minimal check
     stopifnot()
     check_installed('skesa', silent=TRUE)
     check_version('skesa')
@@ -31,28 +33,60 @@ skesa_assembly <- function() {
 #'
 #' CLI wrapper for SPAdes assembly from short reads
 #'
-#' @param
-#' @param
+#' @param input.1 File name, file with forward paired-end reads
+#' @param input.2 File name, file with reverse paired-end reads
+#' @param input.s File name, file with unpaired reads
+#' @param threads Integer, number of threads to use
 #' @param overwrite Boolean, whether to overwrite output
 #'
 #' @export
-spades_assembly <- function() {
+spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL, 
+                            output=NULL,
+                            threads=n_proc(), overwrite=FALSE
+                           ) {
 
     # Minimal check
-    stopifnot()
+    stopifnot(
+        !is.null(output)
+    )
     check_installed('spades.py', silent=TRUE)
     check_version('spades.py')
 
-    # Check input
-
     # Check output
+    if (file.exists(output)) {
+        msg <- paste('Output file',output,'already exists. Will be skipped...')
+        warning(msg)
+        return(1)
+    }
+
+    # Check input
+    if (!is.null(input.s)) {
+        if (is.null(input.1) & is.null(input.2)) {
+            input <- paste('-s',input.s)
+            msg <- 'Using unpaired reads...'
+            message(msg)
+        } else {
+            msg <- 'Paired-end input supplied together with unpaired input. Aborting.'
+            stop(msg)
+        }
+    }
+    if (!is.null(input.1) & !is.null(input.2)) {
+        input <- paste('-1',input.1,'-2',input.2)
+        msg <- 'Using paired-end reads...'
+        message(msg)
+    } else {
+        msg <- 'For paired-end reads both input.1 AND input.2 must be supplied. Aborting.'
+        stop(msg)
+    }
 
     # Run SPAdes
     cmd <- 'spades.py'
+    cmd <- paste(cmd, input,'-o', output,'--threads',threads)
     cmd <- paste(cmd,'2>&1')
     stdout <- system(cmd, intern=TRUE)
     stdout <- paste(stdout, collapse='\n')
     cat(stdout)
+    return(0)
 }
 
 #' Raven assembly
@@ -87,8 +121,7 @@ raven_assembly <- function(input.fastq=NULL,
     }
     
     # Run Raven
-    cmd <- paste0('raven --threads ',threads,' ',input.fastq,' > ',output.fasta)
-    cmd <- paste0(cmd,' 2>&1')
+    cmd <- paste('raven','--threads',threads,input.fastq,'>',output.fasta,'2>&1')
     message(cmd)
     stdout <- system(cmd, intern=TRUE)
     stdout <- paste(stdout, collapse='\n')

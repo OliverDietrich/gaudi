@@ -2,24 +2,29 @@
 % Please edit documentation in R/k_mer_utils.R
 \name{jellyfish_count_kmers}
 \alias{jellyfish_count_kmers}
-\title{Count nucleotide k-mers using jellyfish}
+\title{Jellyfish k-mer counting}
 \usage{
 jellyfish_count_kmers(
-  infile = NULL,
-  sequence = NULL,
-  outfile = NULL,
-  k = 31,
-  threads = NULL,
-  return.counts = TRUE
+  input.sequence = NULL,
+  output.tsv = NULL,
+  temp.dir = "tmp/jellyfish_count/",
+  k = 32,
+  hash.size = "100M",
+  threads = n_proc(),
+  remove.intermediates = TRUE
 )
 }
 \arguments{
-\item{k}{Size of k-mer}
+\item{input.sequence}{File path}
 
-\item{threads}{Number of cores to use (default: all)}
+\item{output.tsv}{File path}
 
-\item{seq}{Nucleotide sequence(s) to count k-mers. Input must be character vector or list.}
+\item{k}{Integer, length of k-mer}
+
+\item{hash.size}{Character, Initial hash size (e.g. '100M')}
+
+\item{threads}{Integer, Number of threads}
 }
 \description{
-Count nucleotide k-mers using jellyfish
+CLI wrapper for Jellyfish to count k-mers
 }

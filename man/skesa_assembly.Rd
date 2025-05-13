@@ -7,6 +7,14 @@
 skesa_assembly()
 }
 \arguments{
+\item{input.1}{Character, file name of forward paired-end reads}
+
+\item{input.2}{Character, file name of reverse paired-end reads}
+
+\item{input.s}{Character, file name of unpaired reads}
+
+\item{threads}{Integer, number of threads to use}
+
 \item{overwrite}{Boolean, whether to overwrite output}
 }
 \description{

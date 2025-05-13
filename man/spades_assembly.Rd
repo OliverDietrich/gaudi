@@ -4,9 +4,24 @@
 \alias{spades_assembly}
 \title{SPAdes assembly}
 \usage{
-spades_assembly()
+spades_assembly(
+  input.1 = NULL,
+  input.2 = NULL,
+  input.s = NULL,
+  output = NULL,
+  threads = n_proc(),
+  overwrite = FALSE
+)
 }
 \arguments{
+\item{input.1}{File name, file with forward paired-end reads}
+
+\item{input.2}{File name, file with reverse paired-end reads}
+
+\item{input.s}{File name, file with unpaired reads}
+
+\item{threads}{Integer, number of threads to use}
+
 \item{overwrite}{Boolean, whether to overwrite output}
 }
 \description{
