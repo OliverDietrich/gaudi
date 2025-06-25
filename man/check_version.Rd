@@ -4,7 +4,7 @@
 \alias{check_version}
 \title{Check program version}
 \usage{
-check_version(program = NULL)
+check_version(program = NULL, command = "--version")
 }
 \arguments{
 \item{program}{Name of the program}

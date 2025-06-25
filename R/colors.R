@@ -27,10 +27,12 @@ colorscale_diverging <- function(x = NULL,
     if (any(is.na(x))) {
         x <- na.omit(x)
     }
+    x_min <- min(x, na.rm=TRUE)
+    x_max <- max(x, na.rm=TRUE)
     
     # Errors
     ## Data range
-    if (x < min(x) || x > max(x)) {
+    if (any(x < min(x) | x > max(x))) {
         stop('Midpoint is out of data range')
     }
     ## Color palette
@@ -40,8 +42,8 @@ colorscale_diverging <- function(x = NULL,
     
     # Create breaks
     breaks <- unique(c(
-        seq(min(x), midpoint, length.out = breaks_per_side),
-        seq(midpoint, max(x), length.out = breaks_per_side)
+        seq(min(x, na.rm=TRUE), midpoint, length.out = breaks_per_side),
+        seq(midpoint, max(x, na.rm=TRUE), length.out = breaks_per_side)
     ))
     
     # Color values

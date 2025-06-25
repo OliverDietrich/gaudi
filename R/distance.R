@@ -72,8 +72,8 @@ mash_distance <- function(input=NULL, output.dir=NULL,
         output.dir <- paste0(output.dir,'/')
     }
     seq.list <- paste0(output.dir,'seq_list.txt')
-    sketch.archive <- paste0(output.dir,'reference.msh')
-    dist.tsv <- paste0(output.dir,'distances.tsv')
+    sketch.archive <- paste0(output.dir,k,'_mers.msh')
+    dist.tsv <- paste0(output.dir,k,'_mers.tsv')
     result <- NULL
     
     # Check input
@@ -125,6 +125,70 @@ mash_distance <- function(input=NULL, output.dir=NULL,
         result$reference <- lv[result$reference]
         result$query <- lv[result$query]        
     }
+
+    # Exit
+    return(result)
+}
+
+#' Compute Mash distance between pre-computed sketches
+#' 
+#' @param ref.sketch Character, path to reference sketch
+#' @param query.sketch Character, path to query sketch
+#' @param out.file Character, file name to output.tsv
+#'
+#' @export
+#'
+mash_sketch_distance <- function(ref.sketch = NULL, query.sketch = NULL,
+                                 out.file = NULL, threads = n_proc()
+                                ) {
+
+    # Minimal check
+    stopifnot(
+        !is.null(ref.sketch),
+        !is.null(query.sketch),
+        !is.null(out.file)
+    )
+
+    # Variables
+    sketches <- c(ref.sketch,query.sketch)
+    output_cols <- c('reference','query','distance','p_value','matches')
+
+    # Check output
+    if (file.exists(out.file)) {
+        msg <- paste0('File',out.file,'already exists. Reading...')
+        warning(msg)
+        result <- readr::read_tsv(out.file, col_names = output_cols)
+        return(result)
+    }
+    if (!endsWith(out.file,'.tsv')) {
+        msg <- paste0('File',out.file,'must be a TSV file.')
+        stop(msg)
+    }
+
+    # Check input
+    index <- !endsWith(sketches,'.msh')
+    if (all(index)) {
+        wrong <- paste(sketches[index],collapse=', ')
+        msg <- paste0('File(s)',wrong,'must be a mash sketch file (.msh).')
+        stop(msg)
+    }
+
+    # Run Mash
+    cmd <- paste('mash dist','-p',threads,ref.sketch,query.sketch,'>',out.file)
+    cmd <- paste(cmd,'2>&1')
+    stdout <- system(cmd, intern=TRUE)
+    stdout <- paste(stdout, collapse='\n')
+    cat(stdout)
+
+    # Run Mash
+    cmd <- paste('mash dist','-p',threads,query.sketch,ref.sketch,'>>',out.file)
+    cmd <- paste(cmd,'2>&1')
+    stdout <- system(cmd, intern=TRUE)
+    stdout <- paste(stdout, collapse='\n')
+    cat(stdout)
+
+    # Read output
+    result <- readr::read_tsv(out.file, col_names = output_cols)
 
     # Exit
     return(result)

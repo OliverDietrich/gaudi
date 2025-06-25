@@ -34,7 +34,7 @@ check_installed <- function(program=NULL, silent=FALSE) {
 #' @param program Name of the program
 #'
 #' @export
-check_version <- function(program=NULL) {
+check_version <- function(program=NULL, command='--version') {
     
     # Minimal check
     stopifnot(
@@ -45,11 +45,12 @@ check_version <- function(program=NULL) {
 
     # Exceptions
     exceptions <- list(
-        'dataformat' = 'dataformat version'
+        'dataformat' = 'dataformat version',
+        'defense-finder' = 'defense-finder version'
     )
 
     # Version command
-    cmd <- paste(program,'--version','2>&1')
+    cmd <- paste(program,command,'2>&1')
     if (program %in% names(exceptions)) {
         cmd <- exceptions[[program]]
     }
@@ -107,10 +108,12 @@ n_proc <- function() {
 #' @export
 is_file <- function(file_name=NULL, suffix=NULL, silent=FALSE) {
 
-    # Minimal check
-    stopifnot(
-        !is.null(file_name)
-    )
+    # NULL
+    if (is.null(file_name)) {
+        msg <- 'File name not specified. Returning FALSE!'
+        if (!silent) warning(msg)
+        return(FALSE)
+    }
 
     # Ensure single file name
     if (length(file_name) < 1) {
@@ -120,10 +123,12 @@ is_file <- function(file_name=NULL, suffix=NULL, silent=FALSE) {
     }
     if (class(file_name) != 'character') {
         msg <- 'Incorrect file specification: object not a character vector.'
+        if (!silent) warning(msg)
         return(FALSE)
     }
     if (length(file_name) > 1) {
         msg <- 'Incorrect file specification: object length > 1.'
+        if (!silent) warning(msg)
         return(FALSE)
     }
 
