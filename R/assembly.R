@@ -89,6 +89,47 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
     return(0)
 }
 
+#' Unicycler assembly
+#'
+#' CLI wrapper for Unicycler genome assembly.
+#' Ideally hybrid (long + short) but accepts both short and long reads only.
+#' 
+#' @param short.1 FASTQ file of first short reads in each pair (R1)
+#' @param short.2 FASTQ file of second short reads in each pair (R2)
+#' @param unpaired FASTQ file of unpaired short reads (S)
+#' @param long FASTQ or FASTA file of long reads
+#' @param out.dir Output directory
+#' @param keep Level of file retention 0 = only keep final files: assembly (FASTA, GFA and log), 
+#' 1 = also save graphs at main checkpoints, 2 = also keep SAM (enables fast rerun in different mode),3 = keep all temp files and save all graphs (for debugging)
+#' @param min_fasta_length Exclude contigs from the FASTA file which are shorter than this length (default: 100)
+#' @param mode Bridging mode: conservative, normal, bold (default: normal)
+#' @param linear_seqs The expected number of linear (i.e. non-circular) sequences in the underlying sequence (default: 0)
+#' @param threads Number of threads used
+#'
+#' @export
+unicycler_assembly <- function(short.1=NULL, short.2=NULL, unpaired=NULL, 
+                               long=NULL, out.dir, 
+                               keep = 1, mode = 'normal',
+                               min_fasta_length=100,
+                               linear_seqs = 0,
+                               threads = n_proc()
+                              ) {
+
+    # Minimal check
+
+    # Variables
+
+    # Check output
+
+    # Check input
+
+    # Main
+    stdout <- system3('unicycler')
+    
+    # Format output
+    cat(stdout)
+}
+
 #' Raven assembly
 #' 
 #' CLI wrapper for Raven to assemble genomes from long reads
@@ -98,16 +139,15 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
 #' @param threads Number of CPU cores to use
 #'
 #' @export
-raven_assembly <- function(input.fastq=NULL,
-                           output.fasta=NULL,
+raven_assembly <- function(input.fastq, output.fasta,
                            threads=n_proc()
                           ) {
 
     # Minimal check
     stopifnot(
         !is.null(input.fastq),
-        #is_valid_fastq(input.fastq),
         !is.null(output.fasta)
+        #is_valid_fastq(input.fastq)
     )
     check_installed('raven', silent=TRUE)
     check_version('raven')
@@ -202,5 +242,39 @@ flye_assembly <- function(pacbio.raw=NA, pacbio.corr=NA, pacbio.hifi=NA, nano.ra
     message(cmd)
     stdout <- system(cmd, intern=TRUE)
     stdout <- paste(stdout, collapse='\n')
+    cat(stdout)
+}
+
+#' Medaka polishing
+#'
+#' CLI wrapper for Medaka polishing of genome assemblies.
+#' Medaka is optimized to work with the Flye assembler.
+#' 
+#' @param input.fastx FASTx input basecalls
+#' @param input.assembly FASTA input assembly
+#' @param out.dir Output folder
+#' @param fill_gaps Boolean, whether to fill gaps in consensus with draft sequence
+#' @param model Medaka model (see "medaka_consensus -h" for choices)
+#' @param threads Number of threads with which to create features
+#' @param batch_size Numeric, select batch size to control memory use
+#'
+#' @export
+medaka_polish <- function(input.fastx=NULL, input.assembly=NULL, out.dir=NULL, 
+                          fill_gaps=TRUE, model = 'r1041_e82_400bps_sup_v5.0.0', 
+                          threads=1
+                         ) {
+
+    # Minimal check
+
+    # Variables
+
+    # Check output
+
+    # Check input
+
+    # Main
+    stdout <- system3('medaka_consensus')
+
+    # Format output
     cat(stdout)
 }
