@@ -1,3 +1,87 @@
+#' Bacterial ORF detection by Prodigal
+#'
+#' CLI wrapper for open reading frame (ORF) detection by Prodigal
+#'
+#' @export
+prodigal <- function() {}
+
+
+#' Viral ORF detection by PHANOTATE
+#'
+#' CLI wrapper for open reading frame (ORF) detection by PHANOTATE
+#'
+#' @export
+phanotate <- function() {}
+
+
+#' Detect MGEs with geNomad
+#'
+#' CLI wrapper for geNomad to detect mobile genetic elements (MGE)
+#'
+#' @param input.fasta Character, path to input FASTA
+#' @param output.dir Character, path to output directory
+#' @param db Character, path to database
+#' @param force Boolean, whether to overwrite output.dir
+#'
+#' @export
+geNomad <- function(input.fasta=NULL, output.dir=NULL, db=NULL, force=FALSE) {
+
+    # Minimal check
+    stopifnot(
+        is_file(input.fasta, suffix=c('.fasta','.fna')),
+        !is.null(output.dir),
+        !is.null(db)
+    )
+
+    # Check input
+    if (!endsWith(output.dir,'/')) {
+        output.dir <- paste0(output.dir,'/')
+    }
+
+    # Variables
+    log.file <- paste0(output.dir,'runtime.log')
+    out.file <- paste0(output.dir,'genome_aggregated_classification/genome_aggregated_classification.tsv')
+
+    # Check output
+    if (file.exists(out.file) & !force) {
+        msg <- paste('Output file',out.file,'already exists. Aborting...')
+        warning(msg)
+        return()
+    }
+
+    # Check DB
+    if (endsWith(db,'/')) {
+        db <- stringr::str_sub(db, start = 0, end = -2)
+    }
+    if (!endsWith(db,'genomad_db')) {
+        msg <- 'geNomad DB must be named "genomad_db"!'
+        stop(msg)
+    }
+    if (!dir.exists(db)) {
+        msg <- paste('geNomad database not present. Downloading to',db)
+        warning(msg)
+        cmd <- paste('genomad download-database',dirname(db))
+        system3(cmd)
+    }
+
+    # Run geNomad
+    cmd <- paste('genomad end-to-end',input.fasta,output.dir,db,'2>&1')
+    cat(cmd,'\n')
+    stdout <- system(cmd, intern=TRUE)
+    outsize <- length(stdout)
+    stdout <- paste(stdout, collapse='\n')
+    writeLines(stdout, log.file)
+
+    # Print statement
+    if (outsize < 25) {
+        cat(stdout)
+    } else {
+        msg <- paste('Long stdout, check',log.file)
+        warning(msg)
+    }
+}
+
+
 #' Bakta annotation
 #' 
 #' CLI wrapper for genome annotation using Bakta
@@ -22,6 +106,9 @@ bakta <- function(input.fasta=NULL, output.dir=NULL, output.prefix=NULL, db=NULL
     check_version('bakta')
 
     # Variables
+    if (!endsWith(db,'/')) {
+        db <- paste0(db,'/')
+    }
     download.log <- paste0(db,'download.log')
     if (!endsWith(db,'/')) {
         db <- paste0(db,'/')        
@@ -30,8 +117,10 @@ bakta <- function(input.fasta=NULL, output.dir=NULL, output.prefix=NULL, db=NULL
     bakta.db.version <- paste0(bakta.db,'/version.json')
 
     # Check output
-    if (dir.exists(output.dir) & !force) {
-        msg <- paste('Output directory',output.dir,'already exists. Aborting...')
+    output.files <- list.files(output.dir)
+    output_gff <- output.files[str_which(output.files, 'gff3')]
+    if (length(output_gff) & !force) {
+        msg <- paste('Output file',output_gff,'already exists. Aborting...')
         cat(msg)
         return()
     }
@@ -40,16 +129,19 @@ bakta <- function(input.fasta=NULL, output.dir=NULL, output.prefix=NULL, db=NULL
     if (is.null(db)) {
         msg <- 'Please supply a path for the Bakta database!'
         stop(msg)
+    } else if (download.db) {
+        msg <- paste('Downloading bakta database to',bakta.db)
+        message(msg)
+        cmd <- paste('bakta_db download','--output',db,'--type','full','2>&1')
+        message(cmd)
+        stdout <- system(cmd, intern=TRUE)
+        writeLines(stdout, download.log)
+        stdout <- paste(stdout, collapse='\n')
+        cat(stdout)
     } else if (file.exists(bakta.db.version)) {
         bakta.db.version <- jsonlite::read_json(bakta.db.version)
         msg <- paste0('Bakta database (',bakta.db.version$type,'), version ',bakta.db.version$major,'.',bakta.db.version$minor,' (',bakta.db.version$date,')')
         message(msg)
-    } else if (!file.exists(bakta.db) & download.db) {
-        msg <- paste('Downloading bakta database to',db)
-        message(msg)
-        cmd <- paste('bakta_db download','--output',db,'--type','full','2>&1')
-        message(cmd)
-        system2(cmd, stdout=download.log, stderr=download.log)
     } else {
         msg <- paste('Bakta database',db,'does not exists.','Consider passing download.db=TRUE.')
         stop(msg)
@@ -62,10 +154,6 @@ bakta <- function(input.fasta=NULL, output.dir=NULL, output.prefix=NULL, db=NULL
     cat(stdout)
 }
 
-#' Prokka
-#'
-#' ...
-
 
 #' PhANNs
 #'
@@ -74,7 +162,7 @@ bakta <- function(input.fasta=NULL, output.dir=NULL, output.prefix=NULL, db=NULL
 #' @param genome.fasta Path to genome FASTA
 #'
 #' @export
-annotate_PhANNs <- function(genome.fasta=NULL, output.dir=NULL, 
+PhANNs <- function(genome.fasta=NULL, output.dir=NULL, 
                             conda.env='../envs/phanns',
                             repo.dir='../PhANNs',
                             repo.url='https://github.com/Adrian-Cantu/PhANNs.git',
@@ -88,6 +176,23 @@ annotate_PhANNs <- function(genome.fasta=NULL, output.dir=NULL,
     )
 
     # Check program
+
+    return(NULL)
+}
+
+#' Pharokka
+#'
+#' CLI wrapper for phage genome annotation using Pharokka.
+#'
+#' @param genome.fasta Path to genome FASTA
+#'
+#' @export
+pharokka <- function(genome.fasta=NULL) {
+
+    # Minimal check
+    stopifnot(
+        is_file(genome.fasta)
+    )
 
     return(NULL)
 }
@@ -330,18 +435,6 @@ capsule_finder <- function() {}
 #'
 #' version 3
 
-#'
-#' @export
-phANNs_phage_annotation <- function(genome.fasta=NULL) {
-
-    # Minimal check
-    stopifnot(
-        !is.null(genome)
-    )
-
-    return(NULL)
-}
-
 #' PhageRBPdetect
 #'
 #' Detect receptor binding proteins (RBP) in phage genomes
@@ -361,18 +454,3 @@ phage_rbp_detect <- function(genome=NULL) {
     # ...
     return(NULL)
 }
-
-#' geNomad
-#'
-#' Plasmid detection
-geNomad <- function() {}
-
-#' Virsorter2
-#'
-#' Prophage detection
-virsorter <- function() {}
-
-#' MacSyFinder
-#'
-#' Macromolecular systems finder
-mac_sy_finder <- function() {}
