@@ -11,6 +11,15 @@ summarize_read_quality(
   per.base.quality = FALSE
 )
 }
+\arguments{
+\item{fastq}{Character, path to FASTQ file}
+
+\item{read}{Integer, which read to summarize}
+
+\item{min.base.quality}{Integer, PHRED score of individual bases to be qualified}
+
+\item{per.base.quality}{Boolean, whether to return per-base quality scores (TRUE) or summary scores (FALSE)}
+}
 \description{
-Compute read quality
+Compute average PHRED score for a single read within a FASTQ file
 }

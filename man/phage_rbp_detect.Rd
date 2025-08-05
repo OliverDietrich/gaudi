@@ -2,7 +2,7 @@
 % Please edit documentation in R/annotation.R
 \name{phage_rbp_detect}
 \alias{phage_rbp_detect}
-\title{PhageRBPdetect}
+\title{Kaptive}
 \usage{
 phage_rbp_detect(genome = NULL)
 }
@@ -10,5 +10,9 @@ phage_rbp_detect(genome = NULL)
 \item{genome}{FASTA}
 }
 \description{
+version 3
+PhageRBPdetect
+}
+\details{
 Detect receptor binding proteins (RBP) in phage genomes
 }

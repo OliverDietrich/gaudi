@@ -4,7 +4,7 @@
 \alias{raven_assembly}
 \title{Raven assembly}
 \usage{
-raven_assembly(input.fastq = NULL, output.fasta = NULL, threads = n_proc())
+raven_assembly(input.fastq, output.fasta, threads = n_proc())
 }
 \arguments{
 \item{input.fastq}{Fastq files to assemble}

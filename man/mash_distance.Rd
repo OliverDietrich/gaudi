@@ -9,6 +9,7 @@ mash_distance(
   output.dir = NULL,
   k = 21,
   s = 1000,
+  individual.seqs = FALSE,
   threads = n_proc(),
   recompute.sketch = FALSE,
   recompute.dist = FALSE
@@ -28,6 +29,8 @@ mash_distance(
 \item{recompute.dist}{Boolean, whether to re-compute the Mash distances}
 
 \item{output}{Path, output prefix (first input file used if unspecified). The suffix '.msh' will be appended.}
+
+\item{individual}{Boolean, whether to sketch individual sequences rather than whole files}
 
 \item{sketch.archive}{File name, destination of the sketch archive}
 }

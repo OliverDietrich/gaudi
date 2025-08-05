@@ -2,10 +2,19 @@
 % Please edit documentation in R/annotation.R
 \name{geNomad}
 \alias{geNomad}
-\title{geNomad}
+\title{Detect MGEs with geNomad}
 \usage{
-geNomad()
+geNomad(input.fasta = NULL, output.dir = NULL, db = NULL, force = FALSE)
+}
+\arguments{
+\item{input.fasta}{Character, path to input FASTA}
+
+\item{output.dir}{Character, path to output directory}
+
+\item{db}{Character, path to database}
+
+\item{force}{Boolean, whether to overwrite output.dir}
 }
 \description{
-Plasmid detection
+CLI wrapper for geNomad to detect mobile genetic elements (MGE)
 }

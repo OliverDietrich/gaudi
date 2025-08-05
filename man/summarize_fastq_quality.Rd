@@ -18,5 +18,5 @@ summarize_fastq_quality(
 \item{max.reads}{Integer, number of reads to sample}
 }
 \description{
-Compute FASTQ summary
+Compute average PHRED score across a subset of reads within a FASTQ file
 }
