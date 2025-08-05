@@ -152,6 +152,19 @@ read_gff3 <- function(file=NULL, keep_fasta_sequences_as_attributes=FALSE, verbo
     return(object)
 }
 
+#' Write GFF3 file
+#'
+#' Write data.frame to GFF3 formatted file
+#'
+#' @param object Data.frame
+#' @param file Character, file path
+#'
+#' @export
+write_gff3 <- function() {
+
+    
+}
+
 #' Extract FASTA headers
 #'
 #' @param input.fasta Character, input FASTA file

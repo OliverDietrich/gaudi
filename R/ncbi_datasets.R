@@ -246,8 +246,7 @@ ncbi_datasets_summary_genome <- function(accession = NULL,
 #' @param path Path to genome dataset (e.g. .../ncbi_dataset/data/GCA_000000000.1/)
 #' 
 #' @export
-ncbi_genome_files <- function(path = NULL
-                                ) {
+ncbi_genome_files <- function(path = NULL) {
 
     # Minimal check
     stopifnot(
@@ -263,7 +262,7 @@ ncbi_genome_files <- function(path = NULL
     object <- list.files(path)
     object <- data.frame(
         'file' = object,
-        'type' = case_when(
+        'type' = dplyr::case_when(
             object == 'cds_from_genomic.fna' ~ "CDS",
             endsWith(object, '_genomic.fna') ~ "genome",
             endsWith(object, '.gbff') ~ "gbff",
@@ -276,7 +275,7 @@ ncbi_genome_files <- function(path = NULL
     object$file <- paste0(path,object$file)
 
     # Pivot wider
-    object <- pivot_wider(object, names_from=type, values_from=file, values_fn = ~paste(.x, collapse=','))
+    object <- tidyr::pivot_wider(object, names_from=type, values_from=file, values_fn = ~paste(.x, collapse=','))
     
     # Exit 0
     return(object)

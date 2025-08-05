@@ -169,12 +169,7 @@ navigate_to_project_root <- function(project.name = NULL,
 #' @param command the system command to be invoked, as a character string.
 #' 
 #' @export
-system3 <- function(command=NULL) {
-
-    # Minimal check
-    stopifnot(
-        !is.null(command)
-    )
+system3 <- function(command) {
     
     # Redirect stderr
     command <- paste(command, '2>&1')
@@ -211,6 +206,7 @@ activate_conda_env <- function(name=NULL, prefix=NULL, conda_home='~/miniconda3'
     }
     conda_env_path <- paste0(conda_home,'envs/')
     all_envs <- list.files(conda_env_path)
+    pwd <- getwd()
     
     # Checks
     if (is.null(name) & is.null(prefix)) {
@@ -226,19 +222,25 @@ activate_conda_env <- function(name=NULL, prefix=NULL, conda_home='~/miniconda3'
     
     # By name
     if (!is.null(name)) {
+        if (!endsWith(name,'/')) {
+            name <- paste0(name,'/')
+        }
         name_present <- name %in% all_envs
         if (!name_present) {
             msg <- paste0(name,' not present in ',conda_env_path,'. Treating it like a prefix...')
             warning(msg)
-            conda_env <- paste0(name,'/bin')
+            conda_env <- paste0(pwd,'/',name,'bin')
         } else {
-            conda_env <- paste0(conda_env_path,'/',name,'/bin')
+            conda_env <- paste0(conda_env_path,'/',name,'bin')
         }
     }
 
     # By prefix
     if (!is.null(prefix)) {
-        conda_env <- paste0(prefix,'/bin')
+        if (!endsWith(prefix,'/')) {
+            prefix <- paste0(prefix,'/')
+        }
+        conda_env <- paste0(pwd,'/',prefix,'bin')
     }
 
     if (!dir.exists(conda_env)) {

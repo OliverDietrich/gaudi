@@ -44,6 +44,7 @@ jaccard <- function(a=NULL, b=NULL, type='similarity') {
 #' @param output Path, output prefix (first input file used if unspecified). The suffix '.msh' will be appended.
 #' @param k Integer, k-mer size
 #' @param s Integer, sketch size
+#' @param individual Boolean, whether to sketch individual sequences rather than whole files
 #' @param sketch.archive File name, destination of the sketch archive
 #' @param threads Integer, this many threads will be spawned for processing.
 #' @param recompute.sketch Boolean, whether to re-compute the sketch file
@@ -53,6 +54,7 @@ jaccard <- function(a=NULL, b=NULL, type='similarity') {
 #'
 mash_distance <- function(input=NULL, output.dir=NULL, 
                           k=21, s=1000,
+                          individual.seqs=FALSE,
                           threads=n_proc(),
                           recompute.sketch=FALSE,
                           recompute.dist=FALSE
@@ -75,6 +77,11 @@ mash_distance <- function(input=NULL, output.dir=NULL,
     sketch.archive <- paste0(output.dir,k,'_mers.msh')
     dist.tsv <- paste0(output.dir,k,'_mers.tsv')
     result <- NULL
+    if (individual.seqs) {
+        i_flag <- '-i'
+    } else {
+        i_flag <- NULL
+    }
     
     # Check input
     files_present <- file.exists(input)
@@ -99,7 +106,7 @@ mash_distance <- function(input=NULL, output.dir=NULL,
         msg <- paste('Sketch archive',sketch.archive,'already exists.')
         message(msg)
     } else {
-        cmd <- paste('mash sketch','-k',k,'-s',s,'-p',threads,'-o',sketch.archive,'-l',seq.list)
+        cmd <- paste('mash sketch','-k',k,'-s',s,'-p',threads,i_flag,'-o',sketch.archive,'-l',seq.list)
         cmd <- paste(cmd,'2>&1')
         stdout <- system(cmd, intern=TRUE)
         stdout <- paste(stdout, collapse='\n')
@@ -108,7 +115,7 @@ mash_distance <- function(input=NULL, output.dir=NULL,
     
     # Run Mash
     if (is.null(result)) {
-        cmd <- paste('mash dist','-p',threads,sketch.archive,sketch.archive,'>',dist.tsv)
+        cmd <- paste('mash dist','-p',threads,i_flag,sketch.archive,sketch.archive,'>',dist.tsv)
         cmd <- paste(cmd,'2>&1')
         stdout <- system(cmd, intern=TRUE)
         stdout <- paste(stdout, collapse='\n')
