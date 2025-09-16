@@ -5,8 +5,9 @@
 \title{Read GFF3 file}
 \usage{
 read_gff3(
-  file = NULL,
-  keep_fasta_sequences_as_attributes = FALSE,
+  file,
+  extract.attributes = TRUE,
+  keep.sequences = TRUE,
   verbose = FALSE
 )
 }

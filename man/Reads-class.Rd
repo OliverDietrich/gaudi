@@ -16,6 +16,10 @@ two distinct Reads object before being merged into a third Reads object.
 \section{Slots}{
 
 \describe{
+\item{\code{index}}{Character vector matching to index(object)}
+
+\item{\code{alias}}{Character vector of unique aliases for duplicated index(object)}
+
 \item{\code{R1}}{Character, file paths with forward paired-end reads}
 
 \item{\code{R2}}{Character, file paths with reverse paired-end reads}
@@ -23,5 +27,11 @@ two distinct Reads object before being merged into a third Reads object.
 \item{\code{S}}{Character, file paths with unpaired reads}
 
 \item{\code{L}}{Character, file paths with long reads}
+
+\item{\code{counts}}{Data.frame with per sample summary of read counts}
+
+\item{\code{quality}}{Data.frame with per FASTQ quality summary (default 5000 reads per FASTQ file)}
+
+\item{\code{type}}{Summary what type of reads are present in the object}
 }}
 

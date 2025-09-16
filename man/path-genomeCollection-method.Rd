@@ -10,9 +10,6 @@
 The \code{path} slot in an genomeCollection object holds
 a character vector containing file paths.
 }
-\examples{
-index(object)
-}
 \author{
 Oliver Dietrich
 }

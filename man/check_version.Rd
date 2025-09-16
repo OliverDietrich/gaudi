@@ -4,10 +4,14 @@
 \alias{check_version}
 \title{Check program version}
 \usage{
-check_version(program = NULL, command = "--version")
+check_version(program = NULL, command = "--version", return.version = FALSE)
 }
 \arguments{
 \item{program}{Name of the program}
+
+\item{command}{Name of the version command (default: --version)}
+
+\item{return.version}{Whether to return the version number (default FALSE will only print message)}
 }
 \description{
 Check program version

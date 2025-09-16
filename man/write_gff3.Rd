@@ -4,12 +4,15 @@
 \alias{write_gff3}
 \title{Write GFF3 file}
 \usage{
-write_gff3()
+write_gff3(x, filename, replace.attributes = FALSE)
 }
 \arguments{
-\item{object}{Data.frame}
+\item{x}{Data.frame containing GFF3 formatted columns}
 
-\item{file}{Character, file path}
+\item{filename}{File path}
+
+\item{replace.attributes}{Whether to replace the attributes column
+with tag-value pairs gather from non-GFF columns.}
 }
 \description{
 Write data.frame to GFF3 formatted file

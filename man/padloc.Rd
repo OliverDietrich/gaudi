@@ -9,8 +9,8 @@ padloc(
   genes.gff = NULL,
   genome.fna = NULL,
   crispr.gff = NULL,
-  out.dir = NULL,
-  db.path = NULL,
+  out.dir,
+  db.path,
   overwrite = FALSE,
   threads = n_proc()
 )

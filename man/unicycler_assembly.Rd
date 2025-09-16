@@ -9,12 +9,14 @@ unicycler_assembly(
   short.2 = NULL,
   unpaired = NULL,
   long = NULL,
-  out.dir,
+  out.dir = NULL,
+  log.file = NULL,
   keep = 1,
   mode = "normal",
   min_fasta_length = 100,
   linear_seqs = 0,
-  threads = n_proc()
+  threads = n_proc(),
+  overwrite = FALSE
 )
 }
 \arguments{

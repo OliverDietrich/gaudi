@@ -2,9 +2,30 @@
 % Please edit documentation in R/annotation.R
 \name{phanotate}
 \alias{phanotate}
-\title{Viral ORF detection by PHANOTATE}
+\title{PHANOTATE: A phage genome annotator}
 \usage{
-phanotate()
+phanotate(
+  in.file,
+  out.dir,
+  format = "gff",
+  start.codons = c(atg = 0.85, gtg = 0.1, ttg = 0.05),
+  stop.codons = c("tag", "tga", "taa"),
+  min.ORF.length = NULL,
+  recompute = FALSE
+)
+}
+\arguments{
+\item{in.file}{Input file in FASTA format}
+
+\item{out.dir}{Path to output directory}
+
+\item{format}{Output the features in the specified format (genbank, gff, gff3, tabular, fasta, fna, faa)}
+
+\item{start.codons}{Comma separated list of start codons and frequency \link{atg:0.85,gtg:0.10,ttg:0.05}}
+
+\item{stop.codons}{Comma separated list of stop codons \link{tag,tga,taa}}
+
+\item{min.orf.length}{Minimum ORF length}
 }
 \description{
 CLI wrapper for open reading frame (ORF) detection by PHANOTATE

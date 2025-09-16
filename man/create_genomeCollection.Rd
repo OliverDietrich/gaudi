@@ -16,6 +16,8 @@ genomeCollection(
 )
 }
 \arguments{
+\item{ids}{Unique identifiers for each row in meta.data. Can be a column name or vector.}
+
 \item{path}{Character of length 1, path to a}
 
 \item{meta.data}{A data.frame containing meta data associated to ids}

@@ -9,6 +9,3 @@
 \description{
 Accessors to Reads objects contained in a genomeCollection object.
 }
-\examples{
-Reads(object, 'raw')
-}

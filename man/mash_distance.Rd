@@ -5,8 +5,8 @@
 \title{CLI wrapper for Mash}
 \usage{
 mash_distance(
-  input = NULL,
-  output.dir = NULL,
+  input,
+  output.dir,
   k = 21,
   s = 1000,
   individual.seqs = FALSE,

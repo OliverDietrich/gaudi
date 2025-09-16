@@ -4,7 +4,40 @@
 \alias{prodigal}
 \title{Bacterial ORF detection by Prodigal}
 \usage{
-prodigal()
+prodigal(
+  genome,
+  output.dir,
+  output.format = "gff",
+  procedure = "single",
+  translation.table = "auto",
+  write.protein.translations = TRUE,
+  closed.ends = FALSE,
+  write.cds = TRUE,
+  mask.N = TRUE,
+  write.potential.genes = FALSE,
+  recompute = FALSE
+)
+}
+\arguments{
+\item{genome}{Path to genome FASTA file}
+
+\item{output.dir}{Path to output directory}
+
+\item{output.format}{Select output format (gbk, gff, sco)}
+
+\item{procedure}{Select procedure (single or meta)}
+
+\item{translation.table}{Specify a translation table to use (1-25, default: auto)}
+
+\item{write.protein.translations}{Whether to write protein translations}
+
+\item{closed.ends}{Whether genes can run off the edges of a contig}
+
+\item{write.cds}{Whether to write coding nucleotide sequences (CDS)}
+
+\item{mask.N}{Whether to treat runs of N as masked sequence; don't build genes across them}
+
+\item{write.potential.genes}{Whether to write all potential genes (with scores) to the selected file}
 }
 \description{
 CLI wrapper for open reading frame (ORF) detection by Prodigal

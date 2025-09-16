@@ -11,10 +11,18 @@ the genome FASTA file (necessary) and the assembly graph (optional).
 \section{Slots}{
 
 \describe{
+\item{\code{index}}{A character vector sample indices matching index(genomeCollection)}
+
 \item{\code{genome}}{A character vector with paths to the genome FASTA.}
 
 \item{\code{graph}}{A character vector with paths to the genome assembly graph (GFA).}
 
 \item{\code{log}}{A character vector with paths to the assembly log file.}
+
+\item{\code{reads}}{A character vector indicating the slot name in ReadsNames(object).}
+
+\item{\code{tool}}{A character vector indicating the assembly tool (e.g. SPAdes, Flye, Unicycler, ...)}
+
+\item{\code{type}}{A character vector indicating the assembly type}
 }}
 

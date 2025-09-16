@@ -4,7 +4,7 @@
 \alias{read_assembly_graph}
 \title{Read assembly graph}
 \usage{
-read_assembly_graph(input.graph = NULL, remove.sequences = TRUE)
+read_assembly_graph(input.graph = NULL, remove.seqs = TRUE)
 }
 \arguments{
 \item{input.graph}{Character, path to input file}

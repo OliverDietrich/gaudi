@@ -8,7 +8,19 @@ spades_assembly(
   input.1 = NULL,
   input.2 = NULL,
   input.s = NULL,
-  output = NULL,
+  out.dir = NULL,
+  isolate = FALSE,
+  single.cell = FALSE,
+  metagenomic = FALSE,
+  biosynthetic = FALSE,
+  sewage = FALSE,
+  corona = FALSE,
+  rna = FALSE,
+  plasmid = FALSE,
+  metaviral = FALSE,
+  metaplasmid = FALSE,
+  rnaviral = FALSE,
+  log.file = NULL,
   threads = n_proc(),
   overwrite = FALSE
 )
@@ -19,6 +31,8 @@ spades_assembly(
 \item{input.2}{File name, file with reverse paired-end reads}
 
 \item{input.s}{File name, file with unpaired reads}
+
+\item{out.dir}{Path to output directory}
 
 \item{threads}{Integer, number of threads to use}
 

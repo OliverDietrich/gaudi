@@ -10,9 +10,6 @@
 The \code{meta.data} slot in an genomeCollection object holds
 a data.frame containing unstructured information associated to each genome.
 }
-\examples{
-metadata(object)
-}
 \author{
 Oliver Dietrich
 }

@@ -7,7 +7,8 @@
 ncbi_datasets_download_genome(
   Assembly.version = NULL,
   out.dir = NULL,
-  overwrite = FALSE
+  debug = FALSE,
+  debug.n = 10
 )
 }
 \arguments{

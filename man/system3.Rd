@@ -4,7 +4,13 @@
 \alias{system3}
 \title{Invoke a System Command}
 \usage{
-system3(command)
+system3(
+  command,
+  max.print = 25,
+  log.file = NULL,
+  verbose = TRUE,
+  include.errors = TRUE
+)
 }
 \arguments{
 \item{command}{the system command to be invoked, as a character string.}

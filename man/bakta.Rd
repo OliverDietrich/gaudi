@@ -5,29 +5,33 @@
 \title{Bakta annotation}
 \usage{
 bakta(
-  input.fasta = NULL,
-  output.dir = NULL,
-  output.prefix = NULL,
-  db = NULL,
+  input.fasta,
+  output.dir,
+  db = "../databases/bakta",
+  prefix = "bakta",
+  keep.contig.headers = TRUE,
+  regions = NULL,
   download.db = FALSE,
   threads = n_proc(),
   force = FALSE
 )
 }
 \arguments{
-\item{input.fasta}{Character, path to FASTA file}
+\item{input.fasta}{Path to input FASTA file}
 
-\item{output.dir}{Character, path to output dir}
-
-\item{output.prefix}{Character,}
+\item{output.dir}{Path to output directory}
 
 \item{db}{Character, path to the bakta database}
+
+\item{regions}{Path to GFF3 file with pre-computed CDS regions}
 
 \item{download.db}{Boolean, whether to download the database if missing}
 
 \item{threads}{Integer, number of threads to use (default: all)}
 
 \item{force}{Boolean, whether to force overwriting existing output folder}
+
+\item{output.prefix}{Prefix of file names}
 }
 \description{
 CLI wrapper for genome annotation using Bakta

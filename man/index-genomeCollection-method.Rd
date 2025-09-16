@@ -10,9 +10,6 @@
 The \code{index} slot in an genomeCollection object holds
 a character vector containing unique genome names.
 }
-\examples{
-index(object)
-}
 \author{
 Oliver Dietrich
 }

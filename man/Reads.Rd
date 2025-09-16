@@ -5,10 +5,10 @@
 \title{Add a \code{Reads} object to a \code{\link{genomeCollection}} object}
 \usage{
 AddReads(
-  object = NULL,
-  name = NULL,
-  x = NULL,
-  ids = "ID",
+  object,
+  data,
+  name,
+  samples = "index",
   R1 = "R1",
   R2 = "R2",
   S = "S",
@@ -18,7 +18,11 @@ AddReads(
 \arguments{
 \item{object}{A \code{\link{genomeCollection}} object}
 
-\item{x}{Data.frame containing the paths to reads files}
+\item{data}{Data.frame containing the paths to reads files}
+
+\item{name}{Slot name of the Reads object in the genomeCollection}
+
+\item{samples}{Name of the column containing sample names}
 
 \item{R1}{Name of the column containing file paths with forward paired-end reads}
 
