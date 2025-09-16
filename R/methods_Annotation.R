@@ -1,10 +1,10 @@
-### Methods for the Assembly class
+### Methods for the Annotation class
 
 #-------------------------------------------------------------------------------
-# validity check for Assembly class object
+# validity check for Annotation class object
 #-------------------------------------------------------------------------------
 
-.valid.Assembly <- function(object) {
+.valid.Annotation <- function(object) {
     msg <- NULL
 
     # ...
@@ -13,20 +13,21 @@
     return(TRUE)
 }
 
-methods::setValidity("Assembly", .valid.Assembly)
+methods::setValidity("Annotation", .valid.Annotation)
 
 #-------------------------------------------------------------------------------
 # show
 #-------------------------------------------------------------------------------
 
-.show.Assembly <- function(object) {
+.show.Annotation <- function(object) {
 
     # Summarize
     n <- length(object$index)
     print.index <- if (n > 5) c(head(object$index,3), "...", tail(object$index,3)) else object$index
     file.summary <- list(
-        'contigs' = file.exists(object$contig),
-        'graphs' = file.exists(object$graph),
+        'genes' = file.exists(object$genes),
+        'cds' = file.exists(object$cds),
+        'proteins' = file.exists(object$proteins),
         'log files' = file.exists(object$log)
     )
     file.summary <- sapply(file.summary, sum)
@@ -37,14 +38,14 @@ methods::setValidity("Assembly", .valid.Assembly)
     cat(
         is(object),"\n","containing", length(object$index), "entries:", print.index, 
         "\n",
-        paste0("assembled from Reads(object, '", object$reads, "')", " using ", object$tool, " (",object$type,")", collapse = ''),
+        paste0("annotated from object[['", object$genome, "']]", " using ", object$tool, " (",object$type,")", collapse = ''),
         "\n",
         "Files exist?", file.summary, "\n"
     )
 }
 
 #' @export 
-setMethod("show", "Assembly", .show.Assembly)
+setMethod("show", "Annotation", .show.Annotation)
 
 #-------------------------------------------------------------------------------
 # Accessors
@@ -55,15 +56,28 @@ setMethod("show", "Assembly", .show.Assembly)
 #' @importFrom utils .DollarNames
 #'
 #' @export
-.DollarNames.Assembly <- function(x, pattern = "") {
+.DollarNames.Annotation <- function(x, pattern = "") {
     grep(pattern, slotNames(x), value=TRUE)
 }
 
 #' Data
 #'
-#' Get Assembly data
+#' Get Annotation data
 #'
-#' @param x A Assembly object
-#' @param name Name of Assembly slot
+#' @param x An Annotation object
+#' @param name Name of Annotation slot
 #'
-setMethod("$", "Assembly", function(x, name) slot(x, name))
+setMethod("$", "Annotation", function(x, name) slot(x, name))
+
+#' Accessors for the components of an Annotation object.
+#'
+#' @author Oliver Dietrich
+#' @export
+#'
+setMethod("Genes", "Annotation", function(x) setNames(x@genes, x@index))
+
+setMethod("Proteins", "Annotation", function(x) setNames(x@proteins, x@index))
+
+setMethod("CDS", "Annotation", function(x) setNames(x@CDS, x@index))
+
+setMethod("Log", "Annotation", function(x) setNames(x@log, x@index))

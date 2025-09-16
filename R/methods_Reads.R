@@ -24,15 +24,15 @@
 #' @rdname Reads
 #' @export
 #'
-AddReads <- function(object = NULL, data=NULL, name=NULL, samples = 'index', R1 = 'R1', R2 = 'R2', S = 'S', L = 'L') {
+AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2', S = 'S', L = 'L') {
 
-    # Minimal check
+    # Variables
     all_cols <- c(samples, R1, R2, S, L)
     cols_names <- c('index','R1','R2','S','L')
+    
+    # Minimal check
     stopifnot(
-        class(object) == 'genomeCollection',
-        !is.null(name),
-        class(data) == 'data.frame',
+        is(object) == 'genomeCollection',
         !any(duplicated(all_cols)),
         samples %in% names(data),
         any(c(R1, S, L) %in% names(data))
@@ -117,17 +117,21 @@ AddReads <- function(object = NULL, data=NULL, name=NULL, samples = 'index', R1 
 }
 
 #-------------------------------------------------------------------------------
-# validity check for genomeCollection class object
+# validity check for Reads class object
 #-------------------------------------------------------------------------------
 
 .valid.Reads <- function(object) {
     msg <- NULL
 
-    if (length(object$index) < 1) {
+    if (length(object@index) < 1) {
       msg <- c(msg, "Too few samples registered for this Reads object.")
     }
 
-    if (any(duplicated(object$alias))) {
+    if (length(object@R1) != length(object@R2)) {
+      msg <- c(msg, "Forward (R1) and reverse (R2) reads do not match.")
+    }
+
+    if (any(duplicated(object@alias))) {
       msg <- c(msg, "Duplicated alias detected. Something went wrong.")
     }
 
@@ -143,9 +147,24 @@ methods::setValidity("Reads", .valid.Reads)
 
 .show.Reads <- function(object) {
 
+    # Summarize
+    n <- length(object@index)
+    m <- length(object@alias)
+    m <- if (length(m)) m else n
+    print.index <- if (n > 5) c(head(object@index,3), "...", tail(object@index,3)) else object@index
+    file.summary <- list(
+        'paired' = file.exists(object$R1) & file.exists(object$R2),
+        'unpaired' = file.exists(object$S),
+        'long' = file.exists(object$L)
+    )
+    file.summary <- sapply(file.summary, sum)
+    file.summary <- paste(names(file.summary), file.summary, sep=': ')
+
     # Print
     cat(
-        str(object, max.level = 2)
+        is(object),"\n","containing", length(object$index), "samples with", m, "FASTQ files:", print.index,
+        "\n",
+        "Files exist?", file.summary, "\n"
     )
 }
 
@@ -157,6 +176,8 @@ setMethod("show", "Reads", .show.Reads)
 #-------------------------------------------------------------------------------
 
 #' Dollar-sign autocompletion
+#'
+#' @importFrom utils .DollarNames
 #'
 #' @export
 .DollarNames.Reads <- function(x, pattern = "") {
@@ -171,3 +192,38 @@ setMethod("show", "Reads", .show.Reads)
 #' @param name Name of Reads slot
 #'
 setMethod("$", "Reads", function(x, name) slot(x, name))
+
+#' Accessors for the FASTQ files of a Reads object.
+#'
+#' @description 
+#' The \code{meta.data} slot in an genomeCollection object holds
+#' a data.frame containing unstructured information associated to each genome.
+#'
+#' @author Oliver Dietrich
+#' @export
+#' 
+setMethod("paired", "Reads", function(x) {
+    if (!length(x@R1)) return(NULL)
+    forward <- setNames(x@R1, x@index)
+    reverse <- setNames(x@R2, x@index)
+    ind <- file.exists(forward) & file.exists(reverse)
+    short <- list(
+        'R1' = forward[ind],
+        'R2' = reverse[ind]
+    )
+    return(short)
+})
+
+setMethod("unpaired", "Reads", function(x) {
+    if (!length(x@S)) return(NULL)
+    short <- setNames(x@S, x@index)
+    ind <- file.exists(short)
+    return(short[ind])
+})
+
+setMethod("long", "Reads", function(x) {
+    if (!length(x@L)) return(NULL)
+    long <- setNames(x@L, x@index)
+    ind <- file.exists(long)
+    return(long[ind])
+})

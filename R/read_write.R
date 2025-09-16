@@ -1,3 +1,35 @@
+#' Extract tag-value pairs by pattern
+#'
+#' @param x A character string containing tag-value pairs, sepearated by pattern
+#' @param pattern A string separating tags from values (e.g. ID=myname)
+#'
+#' @importFrom stringr str_detect str_split
+#'
+#' @export
+extract_tag_value_pairs <- function(x, pattern='=', verbose=FALSE) {
+
+    # Minimal check
+    stopifnot(
+        is.character(x)
+    )
+
+    # Input
+    index <- stringr::str_detect(x, pattern)
+    if (!all(index)) {
+        msg <- paste0('Missing pattern "', pattern, '" in some tag-value pairs. Removing...')
+        if (verbose) warning(msg)
+        #removed <- x[!index] # Originally thought to append as column, but it seems more clean to remove...
+        x <- x[index]
+    }
+
+    # Main
+    pairs <- str_split(x, pattern, simplify=TRUE)
+    pairs <- setNames(pairs[,2], pairs[,1])
+
+    # Exit
+    return(pairs)
+}
+
 #' Extract attributes from GFF3
 #'
 #' Extract values from GFF3 attributes and add columns to object
@@ -6,6 +38,9 @@
 #' @param attribute_key String appended to columns to indicate they are extracted from 'attributes'
 #'
 #' @returns data.frame
+#'
+#' @importFrom dplyr bind_rows
+#' @importFrom stringr str_split
 #'
 #' @export
 extract_gff3_attributes <- function(object=NULL, attribute_key='attribute_') {
@@ -22,54 +57,24 @@ extract_gff3_attributes <- function(object=NULL, attribute_key='attribute_') {
     }
 
     # Extract attributes
-    x <- str_split(object[['attributes']], ';')
+    x <- object[['attributes']]
 
-    # Format attributes
-    ## For each list entry
-    attr_names <- c()
-    for (i in 1:length(x)) {
-        v <- x[[i]]
-        n <- length(v)
-        v_values <- character(length = n)
-        v_names <- character(length = n)
-        # For each vector item
-        for (j in 1:length(v)) {
-            vj <- v[[j]]
-            ss <- str_split(vj,'=')
-            v_values[[j]] <- ss[[1]][[2]] # Righthand side becomes value
-            v_names[[j]] <- ss[[1]][[1]] # Lefthand side becomes name
-        }
-        v <- v_values
-        names(v) <- v_names
+    # Split by ';'
+    x <- str_split(x, ';')
+
+    # Split by '='
+    x <- lapply(x, extract_tag_value_pairs)
+    x <- bind_rows(x)
+
+    # Adjust duplicated names
+    ind <- names(x) %in% names(object)
+    if (length(names)) {
+        names(x)[ind] <- paste0('attribute_',names(x)[ind])
+    }
+
+    # Add back to object
+    object <- cbind(object, x)
     
-        # Store unique entry names
-        ind <- which(!v_names %in% attr_names)
-        attr_names <- c(attr_names, v_names[ind])
-    
-        # Return formatted vector
-        x[[i]] <- v
-    }
-
-    # Check for duplicated column names
-    if (any(attr_names %in% names(object))) {
-        msg <- 'Conflicting attribute names. Appending attribute_ to each new column'
-        warning(msg)
-        stop('Not yet implemented.')
-    }
-
-    # Return attributes to object
-    ## For each attribute
-    for (i in attr_names) {
-        key <- paste0(attribute_key,i)
-        object[[key]] <- NA
-        # For each row
-        for (j in 1:length(x)) {
-            if (i %in% names(x[[j]])) {
-                object[j,key] <- x[[j]][[i]]
-            }
-        }
-    }
-
     return(object)
 }
 
@@ -84,85 +89,190 @@ extract_gff3_attributes <- function(object=NULL, attribute_key='attribute_') {
 #'
 #' @returns data.frame
 #'
+#' @importFrom readr read_table col_character col_integer col_number
+#' @importFrom stringr str_detect str_which str_split
+#'
 #' @export
-read_gff3 <- function(file=NULL, keep_fasta_sequences_as_attributes=FALSE, verbose=FALSE) {
+read_gff3 <- function(file, 
+                      extract.attributes = TRUE,
+                      keep.sequences = TRUE, 
+                      verbose = FALSE
+                     ) {
 
+    # Minimal check
     stopifnot(
-        !is.null(file),
         file.exists(file)
     )
 
     # Variables
-    gff3_column_names <- c('seqid','source','type','start','end','score','strand','phase','attributes')
+    gff3_columns <- list(
+        'seqid' = col_character(),
+        'source' = col_character(),
+        'type' = col_character(),
+        'start' = col_integer(),
+        'end' = col_integer(),
+        'score' = col_character(),
+        'strand' = col_character(),
+        'phase' = col_character(),
+        'attributes' = col_character()
+    )
 
     # Read flat file
     flat <- readLines(file)
 
+    # Detect empty files
+    if (!length(flat)) {
+        msg <- paste('File',file,'is empty. Returning NULL!')
+        warning(msg)
+        return(NULL)
+    }
+    
     ## Check for version
-    version <- flat[[1]]
-    if (version == '##gff-version 3') {
-        if (verbose) {message('Reading gff-version 3.')}
+    ind <- str_detect(flat, '##gff-version')
+    if (sum(ind) >= 1) {
+        version_header <- flat[ind][1]
+        version <- str_split(version_header, pattern = '\\s+')[[1]][[2]]
+        message('Reading gff version ', version)
     } else {
-        msg <- paste0('Unknown header: ', print(version),'. Aborting.')
-        stop(msg)
+        msg <- paste0('Unknown header: Trying anyway...')
+        warning(msg)
     }
     
     # Detect FASTA sequences
-    fasta <- stringr::str_detect(flat, '^##FASTA')
+    fasta <- str_detect(flat, '^##FASTA')
     if (any(fasta)) {
-        if (keep_fasta_sequences_as_attributes) {
-            msg <- 'FASTA sequences present. Will be returned as attributes.'
-            if (verbose) {warning(msg)}
-        } else {
-            msg <- 'FASTA sequences present. Will be removed.'
-            if (verbose) {warning(msg)}
-        }
+        message('FASTA sequences present.')
         fa_start <- which(fasta)
-        gff_start <- 1
-        gff_stop <- fa_start-1
-        flat <- flat[gff_start:gff_stop]
+    } else {
+        fa_start <- Inf
     }
 
     # Remove sequence regions
     seq_region <- stringr::str_which(flat, '^##sequence-region')
-    flat <- flat[-seq_region]
     
     # Extract and print header
-    header_region <- stringr::str_which(flat, '^#')
+    header_region <- stringr::str_detect(flat, '^#')
     header <- flat[header_region]
     header <- paste(header, collapse='\n')
-    if (verbose) {
-        cat('\n', header, '\n\n')
-    }
+    if (verbose) cat('\n', header, '\n\n')
     
     # Create object
-    object <- read.table(text=flat, header = FALSE, sep = '\t', comment.char = '#', col.names = gff3_column_names)
-    if (any(fasta) & keep_fasta_sequences_as_attributes) {
-        attr(object, 'fasta') <- Biostrings::readDNAStringSet(file, seek.first.rec = TRUE)
+    n <- fa_start - sum(header_region)
+    object <- read_tsv(file, col_types = readr::as.col_spec(gff3_columns), col_names = names(gff3_columns), comment = '#', n_max = n)
+    object <- as.data.frame(object)
+
+    # Extract GFF3 column 'attributes'
+    object <- if (extract.attributes) extract_gff3_attributes(object) else object
+
+    # Set object attributes
+    if (keep.sequences & any(fasta)) {
+        attr(object, 'sequence') <- Biostrings::readDNAStringSet(file, seek.first.rec = TRUE)
     }
 
-    # Extract attributes
-    object <- extract_gff3_attributes(object)
-
-    # View
-    if (verbose) {
-        str(object, max.level = 1)
-    }
-
+    # Exit
+    if (verbose) str(object, max.level = 1)
     return(object)
+}
+
+#' Enforce GFF3 formatting
+#'
+#' Format a data.frame according to GFF3 structure.
+#' 
+#' @param x Data.frame
+#'
+#' @export
+#'
+format_gff3 <- function(x, replace.attributes = FALSE) {
+
+    # Check
+    stopifnot(
+        is.data.frame(x)
+    )
+
+    # Variables
+    gff3_columns <- c('seqid','source','type','start','end','score','strand','phase','attributes')
+    mandatory <- c('seqid','source','type','start','end')
+    x_cols <- names(x)
+
+    # Attributes
+    index <- which(!x_cols %in% gff3_columns)
+    if (length(index)) {
+        attr <- x[, index]
+        attr <- apply(attr, 1, function(y) setNames(as.list(y), names(attr)))
+        attr <- lapply(attr, na.omit)
+        attr <- lapply(attr, function(y) paste(names(y), y, sep='='))
+        attr <- lapply(attr, paste, collapse=';')
+        attr <- unlist(attr)
+    } else {
+        attr <- rep('', nrow(x))
+    }
+
+    # Main
+    if (!all(mandatory %in% x_cols)) {
+        msg <- paste0('The mandatory columns (', paste(mandatory), ') are not present.')
+        stop(msg)
+    }
+    GFF <- data.frame(
+        'seqid' = x[['seqid']],
+        'source' = x[['source']],
+        'type' = x[['type']],
+        'start' = x[['start']],
+        'end' = x[['end']],
+        'score' = if ('score' %in% names(x)) x[['score']] else 0,
+        'strand' = if ('score' %in% names(x)) x[['strand']] else '+',
+        'phase' = if ('score' %in% names(x)) x[['phase']] else '.',
+        'attributes' = if ('attributes' %in% x_cols & !replace.attributes) x[['attributes']] else attr
+    )
+
+    # Order IDs
+    lvls <- unique(GFF$seqid)
+    GFF$seqid <- factor(GFF$seqid, lvls)
+        
+    # Order source
+    lvls <- unique(GFF$source)
+    GFF$source <- factor(GFF$source, lvls)
+        
+    # Order data.frame
+    GFF <- GFF[order(GFF$seqid, GFF$start, GFF$end, GFF$source, decreasing = c(FALSE, FALSE, TRUE, FALSE)), ]
+
+    # Exit
+    return(GFF)
 }
 
 #' Write GFF3 file
 #'
 #' Write data.frame to GFF3 formatted file
 #'
-#' @param object Data.frame
-#' @param file Character, file path
+#' @param x Data.frame containing GFF3 formatted columns
+#' @param filename File path
+#' @param replace.attributes Whether to replace the attributes column 
+#' with tag-value pairs gather from non-GFF columns.
 #'
 #' @export
-write_gff3 <- function() {
+write_gff3 <- function(x, filename, replace.attributes=FALSE) {
 
+    # Get sequences
+    fasta <- attr(x, 'sequence')
+
+    # Format attributes
+    x <- format_gff3(x, replace.attributes = replace.attributes)
     
+    # Write header
+    cat('##gff-version 3\n', file = filename)
+
+    # Write main
+    x <- split(x, x$seqid)
+    names(x) <- paste0('##sequence-region ',names(x),'\n')
+    for (i in names(x)) {
+        cat(i, file = filename, append = TRUE)
+        write.table(x[[i]], filename, sep = '\t', append = TRUE, row.names = FALSE, col.names=FALSE, quote=FALSE)
+    }
+    
+    # Append FASTA
+    if (length(fasta)) {
+        cat('##FASTA\n', file = filename, append = TRUE)
+        Biostrings::writeXStringSet(fasta, filename, append = TRUE, format = 'fasta')
+    }
 }
 
 #' Extract FASTA headers
@@ -201,7 +311,7 @@ fasta_headers <- function(input.fasta=NULL) {
 #' @param input.graph Character, path to input file
 #'
 #' @export
-read_assembly_graph <- function(input.graph=NULL, remove.sequences=TRUE) {
+read_assembly_graph <- function(input.graph=NULL, remove.seqs = TRUE) {
 
     # Minimal check
     stopifnot(
@@ -251,6 +361,7 @@ read_assembly_graph <- function(input.graph=NULL, remove.sequences=TRUE) {
             components[['header']][['ProgramVersion']] <- stringr::str_remove(components[['header']][['ProgramVersion']], 'sp:Z:')
         }
     }
+    
     ## Segments
     if ('segments' %in% names(components)) {
         names(components[['segments']])[1:3] <- c('RecordType','Name','Sequence')
@@ -260,7 +371,7 @@ read_assembly_graph <- function(input.graph=NULL, remove.sequences=TRUE) {
             names(components[['segments']])[index] <- 'KmerCount'
             components[['segments']][['KmerCount']] <- stringr::str_remove(components[['segments']][['KmerCount']], 'KC:i:')
             components[['segments']][['KmerCount']] <- as.numeric(components[['segments']][['KmerCount']])
-        }
+        }        
         ### Coverage
         index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='DP:f:'), all))
         if (sum(index) == 1) {
@@ -268,26 +379,45 @@ read_assembly_graph <- function(input.graph=NULL, remove.sequences=TRUE) {
             components[['segments']][['Coverage']] <- stringr::str_remove(components[['segments']][['Coverage']], 'DP:f:')
             components[['segments']][['Coverage']] <- as.numeric(components[['segments']][['Coverage']])
         }
+        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='dp:f:'), all))
+        if (sum(index) == 1) {
+            names(components[['segments']])[index] <- 'Coverage'
+            components[['segments']][['Coverage']] <- stringr::str_remove(components[['segments']][['Coverage']], 'dp:f:')
+            components[['segments']][['Coverage']] <- as.numeric(components[['segments']][['Coverage']])
+        }
         ### Length
-        components[['segments']][['Length']] <- stringr::str_length(components[['segments']][['Sequence']])
+        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='LN:i:'), all))
+        if (sum(index) == 1) {
+            names(components[['segments']])[index] <- 'Length'
+            components[['segments']][['Length']] <- stringr::str_remove(components[['segments']][['Length']], 'LN:i:')
+            components[['segments']][['Length']] <- as.numeric(components[['segments']][['Length']])
+        } else {
+            components[['segments']][['Length']] <- stringr::str_length(components[['segments']][['Sequence']])
+        }
         ### Order
         ind <- order(components[['segments']][['Length']], decreasing = TRUE)
         components[['segments']] <- components[['segments']][ind, ]
         ### Rownames
         row.names(components[['segments']]) <- 1:nrow(components[['segments']])
         components[['segments']][['Contig']] <- 1:nrow(components[['segments']])
-        ### Remove sequence column (takes space, bad for printing)
-        if (remove.sequences) {
+
+        ### Sequences
+        if (remove.seqs) {
+            components$sequence <- Biostrings::DNAStringSet(components[['segments']][['Sequence']])
             components[['segments']][['Sequence']] <- NULL
         }
     }
+    
     ## Links
     if ('links' %in% names(components)) {
         names(components[['links']])[1:6] <- c('RecordType','From','FromOrient','To','ToOrient','Overlap')
         ### Map names to contigs
-        lookup <- lookup <- setNames(components[['segments']][['Contig']], components[['segments']][['Name']])
+        lookup <- setNames(
+            components[['segments']][['Contig']], 
+            components[['segments']][['Name']]
+        )
         components[['links']][['FromContig']] <- lookup[components[['links']][['From']]]
-        components[['links']][['ToContig']] <- lookup[components[['links']][['To']]]
+        components[['links']][['ToContig']] <- lookup[components[['links']][['To']]]        
     }
     ## Jumps
     ## Containments
@@ -296,15 +426,36 @@ read_assembly_graph <- function(input.graph=NULL, remove.sequences=TRUE) {
     ## Comments
 
     # Create graph
+    link_cols <- c('FromContig','ToContig','From','To','Overlap','FromOrient','ToOrient')
+    link_cols <- link_cols[link_cols %in% names(components$links)]
+    segment_cols <- c('Contig','Name','Coverage','Length','KmerCount')
+    segment_cols <- segment_cols[segment_cols %in% names(components$segments)]
     graph <- igraph::graph_from_data_frame(
-        d = components$links[,c('FromContig','ToContig','From','To','Overlap','FromOrient','ToOrient')], 
-        vertices = components$segments[,c('Contig','Name','Coverage','Length','KmerCount')], 
+        d = components$links[, link_cols],
+        vertices = components$segments[, segment_cols], 
         directed = FALSE
     )
-
-    # Transfer 
-    components$segments$group <- components(graph)$membership
     components$graph <- graph
+
+    # Summarize outgoing links of segments
+    lookup <- components$links
+    lookup$N <- 1
+    lookup <- dplyr::group_by(lookup, FromContig)
+    lookup <- dplyr::summarize(lookup, ToContig = paste(ToContig, collapse = ','), LinkCount = sum(N))
+    #lookup <- setNames(lookup$ToContig, lookup$FromContig)
+    ind <- match(components$segments$Contig, lookup$FromContig)
+    components$segments$ToContig <- lookup$ToContig[ind]
+    components$segments$LinkCount <- lookup$LinkCount[ind]
+    
+    # Annotate segments
+    components$segments$Group <- components(graph)$membership
+    components$segments$N <- 1
+    components$segments <- dplyr::mutate(dplyr::group_by(components$segments, Group), 
+                                         Group_Length = sum(Length), 
+                                         Group_Coverage = sum(Length * Coverage) / Group_Length,
+                                         Group_Size = sum(N)
+                                        )
+    components$segments$Circular <- unlist(Map(grepl, components$segments$Contig, components$segments$ToContig))
     
     # Exit
     return(components)

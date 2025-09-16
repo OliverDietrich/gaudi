@@ -8,7 +8,7 @@
 #'
 #' Create a \code{genomeCollection} object from a data.frame with defined components.
 #' 
-#' @param ids
+#' @param ids Unique identifiers for each row in meta.data. Can be a column name or vector.
 #' @param path Character of length 1, path to a 
 #' @param meta.data A data.frame containing meta data associated to ids
 #'
@@ -173,6 +173,13 @@ methods::setValidity("genomeCollection", .gc_validity)
 
 .show.genomeCollection <- function(object) {
 
+  # Samples
+  if (length(index(object)) > 6) {
+      index.print <- paste(paste(head(index(object),3), collapse=' '), "...", paste(tail(index(object),3), collapse=' '))
+  } else {
+      index.print <- paste(index(object), collapse=' ')
+  }
+
   # Meta.data
   meta.cols <- names(object@meta.data)
   mandatory.cols <- c('path','genome','genes','CDS','proteins')
@@ -185,7 +192,7 @@ methods::setValidity("genomeCollection", .gc_validity)
 
   # Print
     cat(
-        is(object),"\n","containing", length(index(object)), "entries:", head(index(object),3), "...", tail(index(object),3), "\n",
+        is(object),"\n","containing", length(index(object)), "entries:", index.print, "\n",
         "stored in", path(object), "\n",
         "\n",
         "meta.data: Total",ncol(object@meta.data),"columns, ",meta.print,"\n"
@@ -210,6 +217,7 @@ setMethod("show", "genomeCollection", .show.genomeCollection)
 #' Get the number of genomes in a genomeCollection
 setMethod("nrow", "genomeCollection", function(x) nrow(x@meta.data))
 
+          
 #' Accessors for the 'index' element of an genomeCollection object.
 #'
 #' @description 
@@ -218,11 +226,10 @@ setMethod("nrow", "genomeCollection", function(x) nrow(x@meta.data))
 #'
 #' @author Oliver Dietrich
 #' @export
-#' 
-#' @examples 
-#' index(object)
+#'
 setMethod("index", "genomeCollection", function(x) x@index)
 
+          
 #' Accessors for the 'path' element of an genomeCollection object.
 #'
 #' @description 
@@ -231,11 +238,10 @@ setMethod("index", "genomeCollection", function(x) x@index)
 #'
 #' @author Oliver Dietrich
 #' @export
-#' 
-#' @examples 
-#' index(object)
+#'
 setMethod("path", "genomeCollection", function(x) x@path)
 
+          
 #' Accessors for the 'meta.data' element of an genomeCollection object.
 #'
 #' @description 
@@ -244,9 +250,7 @@ setMethod("path", "genomeCollection", function(x) x@path)
 #'
 #' @author Oliver Dietrich
 #' @export
-#' 
-#' @examples 
-#' metadata(object)
+#'
 setMethod("metadata", "genomeCollection", function(x) x@meta.data)
 
 setMethod("metadata<-", "genomeCollection", function(x, value) {
@@ -255,10 +259,9 @@ setMethod("metadata<-", "genomeCollection", function(x, value) {
   x
 })
 
+          
 #' Accessors to Reads objects contained in a genomeCollection object.
-#' 
-#' @examples 
-#' Reads(object, 'raw')
+#'
 setMethod("Reads", "genomeCollection", function(x, name=NULL) x@reads[[name]])
 
 setMethod("Reads<-", "genomeCollection", function(x, name=NULL, value) {
@@ -268,6 +271,32 @@ setMethod("Reads<-", "genomeCollection", function(x, name=NULL, value) {
 })
 
 setMethod("ReadsNames", "genomeCollection", function(x) names(x@reads))
+
+
+#' Accessors to Assembly objects contained in a genomeCollection object.
+#'
+setMethod("Assembly", "genomeCollection", function(x, name=NULL) x@assembly[[name]])
+
+setMethod("Assembly<-", "genomeCollection", function(x, name=NULL, value) {
+  x@assembly[[name]] <- value
+  validObject(x)
+  x
+})
+
+setMethod("Assemblies", "genomeCollection", function(x) names(x@assembly))
+
+#' Accessors to Assembly objects contained in a genomeCollection object.
+#' 
+setMethod("Annotation", "genomeCollection", function(x, name=NULL) x@annotation[[name]])
+
+setMethod("Annotation<-", "genomeCollection", function(x, name=NULL, value) {
+  x@annotation[[name]] <- value
+  validObject(x)
+  x
+})
+
+setMethod("Annotations", "genomeCollection", function(x) names(x@annotation))
+
           
 #-------------------------------------------------------------------------------
 # Subsetting
@@ -290,6 +319,8 @@ setMethod("subset", "genomeCollection", function(x, i, j, ..., drop=TRUE) {
 #-------------------------------------------------------------------------------
 
 #' Dollar-sign autocompletion
+#'
+#' @importFrom utils .DollarNames
 #'
 #' @export
 .DollarNames.genomeCollection <- function(x, pattern = "") {
@@ -327,12 +358,22 @@ setMethod("[[", c("genomeCollection","ANY","missing"), function(x, i, j, ...) {
   md <- slot(object = x, name = 'meta.data')
   if (rlang::is_missing(i)) {
     return(md)
-  } else if (is.null(i)) {
+  } else 
+  if (is.null(i)) {
     return(NULL)
-  } else {
+  } else 
+  if (i %in% names(md)) {
     metadata(x)[[i, ...]]
+  } else
+  if (i %in% ReadsNames(x)) {
+    Reads(x, i)
+  } else
+  if (i %in% Annotations(x)) {
+    Annotation(x, i)
+  } else {
+    return(NULL)
   }
-  # Only works for meta.data so far. 
+  # Only works for some slots!
   # Check out https://github.com/satijalab/seurat-object/blob/main/R/seurat.R for implementation of subobjects ...
 })
 

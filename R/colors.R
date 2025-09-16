@@ -23,18 +23,11 @@ colorscale_diverging <- function(x = NULL,
         direction %in% c(1,-1)
     )
     
-    # Remove NAs
-    if (any(is.na(x))) {
-        x <- na.omit(x)
-    }
+    # Fetch range (ignoring NAs)
     x_min <- min(x, na.rm=TRUE)
     x_max <- max(x, na.rm=TRUE)
     
     # Errors
-    ## Data range
-    if (any(x < min(x) | x > max(x))) {
-        stop('Midpoint is out of data range')
-    }
     ## Color palette
     if (!palette %in% row.names(RColorBrewer::brewer.pal.info)) {
         stop('Palette not available in RColorBrewer')

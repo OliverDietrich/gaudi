@@ -52,7 +52,7 @@ jaccard <- function(a=NULL, b=NULL, type='similarity') {
 #'
 #' @export
 #'
-mash_distance <- function(input=NULL, output.dir=NULL, 
+mash_distance <- function(input, output.dir, 
                           k=21, s=1000,
                           individual.seqs=FALSE,
                           threads=n_proc(),
@@ -61,11 +61,6 @@ mash_distance <- function(input=NULL, output.dir=NULL,
                          ) {
 
     # Minimal check
-    stopifnot(
-        !is.null(input),
-        !is.null(output.dir),
-        file.exists(output.dir)
-    )
     check_installed('mash', silent=TRUE)
     check_version('mash')
 
@@ -73,6 +68,7 @@ mash_distance <- function(input=NULL, output.dir=NULL,
     if (!endsWith(output.dir,'/')) {
         output.dir <- paste0(output.dir,'/')
     }
+    dir.create(output.dir, recursive=TRUE)
     seq.list <- paste0(output.dir,'seq_list.txt')
     sketch.archive <- paste0(output.dir,k,'_mers.msh')
     dist.tsv <- paste0(output.dir,k,'_mers.tsv')
@@ -96,7 +92,7 @@ mash_distance <- function(input=NULL, output.dir=NULL,
     if (file.exists(dist.tsv) & !recompute.dist) {
         msg <- 'Output already present. Reading...'
         message(msg)
-        result <- readr::read_tsv(dist.tsv, col_names = c('reference','query','distance','p_value','matches'))
+        result <- readr::read_tsv(dist.tsv, col_names = c('reference','query','mash_distance','p_value','matches'))
     }
 
     # Create sketch
@@ -122,7 +118,7 @@ mash_distance <- function(input=NULL, output.dir=NULL,
         cat(stdout)
 
         # Read output
-        result <- readr::read_tsv(dist.tsv, col_names = c('reference','query','distance','p_value','matches'))
+        result <- readr::read_tsv(dist.tsv, col_names = c('reference','query','mash_distance','p_value','matches'))
     }
 
     # Change file path to name
@@ -132,6 +128,15 @@ mash_distance <- function(input=NULL, output.dir=NULL,
         result$reference <- lv[result$reference]
         result$query <- lv[result$query]        
     }
+
+    # Compute ANI
+    result$ANI <- 1 - result$mash_distance
+
+    # Compute jaccard sim/dist from matches
+    matches <- str_split(result$matches, '\\/', simplify=TRUE)    
+    result$jaccard_similarity <- as.numeric(matches[,1]) / as.numeric(matches[,2])
+    result$jaccard_similarity <- round(result$jaccard_similarity, 2)
+    result$jaccard_distance <- 1 - result$jaccard_similarity
 
     # Exit
     return(result)

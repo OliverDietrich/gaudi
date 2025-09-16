@@ -169,19 +169,65 @@ navigate_to_project_root <- function(project.name = NULL,
 #' @param command the system command to be invoked, as a character string.
 #' 
 #' @export
-system3 <- function(command) {
+system3 <- function(command, max.print=25, log.file=NULL, verbose = TRUE, include.errors = TRUE) {
     
     # Redirect stderr
-    command <- paste(command, '2>&1')
+    command <- if (include.errors) paste(command, '2>&1') else command
 
     # Call system
+    if (verbose) cat(command)
     stdout <- system(command, intern=TRUE)
 
     # Re-format output
-    stdout <- paste(stdout, collapse='\n')
+    n.lines <- length(stdout)
+    log.out <- paste(stdout, collapse='\n')
 
+    # Write
+    if (length(log.file)) {
+        writeLines(log.out, log.file)
+        msg <- paste('Writing stdout/err to', log.file)
+        message(msg)
+    }
+    
     # Print
-    cat(stdout)
+    if (n.lines > max.print) {
+        msg <- paste('Output is longer than', max.print, 'lines and has been cropped.')
+        if (is.null(log.file)) {
+            msg <- paste(msg, 'Consider passing a log.file...')
+        }
+        warning(msg)
+        stdout <- c(head(stdout, max.print-10), '...', tail(stdout, 10))
+    }
+    stdout <- paste(stdout, collapse='\n')
+    cat(stdout,'\n')
+}
+
+#' md5sums
+#'
+#' Calculate md5sums for one or multiple files
+#'
+#' @param file Path to file(s)
+#'
+md5sums <- function(file) {
+
+    # Input
+    v <- character(length(file))
+    ind <- sapply(file, file.exists)
+    
+    # Main
+    if (length(ind)) {
+
+        file <- file[ind]
+        if (length(file) > 1) {
+            file <- paste(file, collapse=' ')
+        }
+        
+        cmd <- paste('md5sum',file,'2>&1')
+        stdout <- system(cmd, intern=TRUE)
+        v[ind] <- str_split(stdout, ' ', simplify=TRUE)[,1]
+    }
+
+    return(v)
 }
 
 #' Activate conda environment
@@ -265,4 +311,51 @@ activate_conda_env <- function(name=NULL, prefix=NULL, conda_home='~/miniconda3'
     }
 
     cat(PATH)
+}
+
+#' Peek
+#'
+#' Peek at a data.frame
+#'
+#' @param x Data.frame
+#' @param n Number of rows to show
+#'
+#' @export
+#'
+peek <- function(x, n=2L) {
+
+    x <- as.data.frame(x)
+
+    x <- rbind(
+        head(x, n),
+        rep('...', ncol(x)),
+        tail(x, n)
+    )
+
+    return(x)
+}
+
+#' Paste a vector into python list
+#'
+#' Used for PHANOTATE input formatting
+#'
+#' @export
+vector_to_python_list <- function(x) {
+
+    # Minimal check
+    stopifnot(
+        is.vector(x)
+    )
+
+    # Paste names
+    if (length(names(x))) {
+        x <- paste(names(x), x, sep = ':')
+    }
+
+    # Paste elements
+    y <- paste(x, collapse=',')
+    y <- paste0('[',y,']')
+
+    # Return
+    return(y)
 }

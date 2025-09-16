@@ -1,14 +1,56 @@
+#' FastQC
+#' 
+#' CLI wrapper for FastQC
+#'
+#' @param files Character vector of FASTQ files
+#' @param out.dir Path to output directory
+#' @param threads Number of cores to use
+#'
+#' @export
+#'
+fastqc <- function(files=NULL, out.dir=NULL, threads=n_proc()) {
+
+    # Minimal check
+    stopifnot(
+        class(files) == 'character',
+        dir.exists(out.dir)
+    )
+
+    # Check output
+    
+
+    # Variables
+    log.file <- paste0(out.dir, 'runtime.log')
+
+    # Concatenate files
+    files <- paste(files, collapse=' ')
+
+    # Main
+    cmd <- paste('fastqc', files, '-o', out.dir, '-w', threads)
+    system3(cmd, log.file = log.file)
+}
+
 #' ReadsCounts
 #'
 #' Count FASTQ files for a genomeCollection
 #'
 #' @param object genomeCollection
 #' @param name Slot name of Reads object in genomeCollection
+#' @param recompute Whether to re-compute the summary
+#' @param multicore Whether to use mclapply for parallel excution
 #' @param threads Integer, number of threads to use
+#' @param debug Whether to run debugging mode: run as many samples as threads
 #'
 #' @export
 #'
-ReadsCounts <- function(object, name, recompute=FALSE, multicore=TRUE, threads=n_proc()) {
+ReadsCounts <- function(object, name, 
+                        recompute = FALSE, 
+                        recompute.sample = NULL,
+                        multicore = TRUE, 
+                        threads = n_proc(), 
+                        debug = FALSE, 
+                        debug.n = threads
+                       ) {
 
     # Minimal check
     stopifnot(
@@ -21,6 +63,8 @@ ReadsCounts <- function(object, name, recompute=FALSE, multicore=TRUE, threads=n
     if (!dir.exists(dirname(csv))) {
         dir.create(dirname(csv))
     }
+
+    # Handling sample duplicates
     id <- if (length(data$alias)) 'alias' else 'index'
     if (id == 'alias') {
         lookup <- setNames(data$index, data$alias)
@@ -28,82 +72,98 @@ ReadsCounts <- function(object, name, recompute=FALSE, multicore=TRUE, threads=n
 
     # Check output
     df <- data$counts
-    if (recompute) {
-        compute <- TRUE
+    if (length(data$counts)) {
+        msg <- paste('Retrieved slot "counts" from Reads(object,"', name, '").')
+        message(msg)
     } else
-    if (!length(df) & file.exists(csv)) {
+    if (file.exists(csv)) {
         msg <- paste('File',csv,'found in path(object)')
         message(msg)
         df <- readr::read_csv(csv)
-        compute <- FALSE
+    }
+
+    # Subset
+    ind <- is.na(df$name)
+    if (all(ind)) {
+        df <- data.frame()
     } else
-    if (length(df) & all(data$index == df$index)) {
-        msg <- 'Read counts have been detected for all samples.'
-        message(msg)
-        compute <- FALSE
+    if (any(ind)) {
+        df <- df[!ind, ]
+    }
+
+    # Re-compute samples
+    ind <- df$index %in% recompute.sample
+    if (sum(ind)) {
+        df <- df[!ind, ]
+    }
+
+    # Timestamp
+    time_start <- Sys.time()
+
+    # Index missing samples
+    done <- if (recompute) character() else df$name
+    allfiles <- character()
+    for (i in c('R1', 'R2', 'S', 'L')) {
+        somefiles <- slot(data, i)
+        if (!length(slot(data, i))) next
+        names(somefiles) <- paste(slot(data, id), i, sep='_')
+        allfiles <- c(allfiles, somefiles)
+    }
+    allfiles <- allfiles[!is.na(allfiles)] # ignore NAs arising from some hybrid assemblies
+    missing <- allfiles[which(!names(allfiles) %in% done)]
+    missing <- if (debug) head(missing, debug.n) else missing
+
+    # Exit 1
+    if (!length(missing)) {
+        slot(Reads(object, name), 'counts') <- as.data.frame(df)
+        return(object)
+    }
+
+    # User messages
+    msg <- paste(length(done), 'out of', length(allfiles), 'files have been counted. Adding', length(missing))
+    message(msg)
+
+    time.est <- round(5 * length(missing) / 60, 2)
+    msg <- paste('Estimated runtime is', time.est, 'minutes')
+    msg <- if (multicore) paste(msg, 'across', threads, 'cores') else msg
+    message(msg)
+
+    # Main
+    if (multicore) {
+        result <- parallel::mclapply(missing, ShortRead::countFastq, mc.cores = threads)
     } else {
-        compute <- TRUE
+        result <- lapply(missing, ShortRead::countFastq)
     }
+    ind <- which(unlist(lapply(result, is.data.frame))) # Some cores will return <try-error>, remove ...
+    result <- dplyr::bind_rows(result[ind], .id = 'name')
+    result$file <- missing
+    df <- dplyr::bind_rows(df, result)
 
-    # Run countFastq
-    if (compute) {
-        # Timestamp
-        time_start <- Sys.time()
-        
-        msg <- paste0('Counting FASTQ entries for Reads(object, "', name, '").')
-        message(msg)
-
-        df <- list()
-        for (i in c('R1','R2','S','L')) {
-            files <- slot(data, i)
-            ind <- file.exists(files)
-            files <- files[ind]
-            if (!length(files)) next
-
-            # Set names
-            names(files) <- slot(data, id)[ind]
-            
-            # Estimate runtime
-            single.time.start <- Sys.time()
-            discard <- countFastq(files[[1]])
-            single.time.stop <- Sys.time()
-            time.diff <- single.time.stop-single.time.start
-            if (multicore) {
-                time.est <- time.diff*length(files)/threads
-            } else {
-                time.est <- time.diff*length(files)
-            }
-            msg <- paste('Estimated runtime for slot', i, 'is', time.est, units(time.est))
-            message(msg)
-
-            # Apply to all
-            if (multicore) {
-                df[[i]] <- parallel::mclapply(files, ShortRead::countFastq, mc.cores = threads)
-            } else {
-                df[[i]] <- lapply(files, ShortRead::countFastq)
-            }
-            df[[i]] <- dplyr::bind_rows(df[[i]], .id = id)
-        }
-
-        # Combine across read types
-        df <- dplyr::bind_rows(df, .id = 'type')
-        if (length(df$alias)) {
-            df$index <- lookup[df$alias]
-        }
-        
-        # Save counts
-        readr::write_csv(df, csv)
-
-        ## Timestamp
-        time_stop <- Sys.time()
-        time.diff <- time_stop-time_start
-        msg <- paste('Time elapsed:', time.diff, units(time.diff), 'on', threads, 'cores.')
-        message(msg)
+    # Format
+    split_names <- stringr::str_split(df$name, '_', simplify=TRUE)
+    if (id == 'alias') {
+        df$alias <- split_names[,1]
+        df$index <- lookup[df$alias]
+    } else {
+        df$index <- split_names[,1]
     }
+    df[['type']] <- split_names[,2]
 
-    # Replace
+    # Subset
+    ind <- match(df$name, names(allfiles))
+    df <- df[ind, ] # c('name','alias','type','records','nucleotides','scores','file')
+    
+    # Save counts
+    readr::write_csv(df, csv)
+
+    ## Timestamp
+    time_stop <- Sys.time()
+    time.diff <- time_stop-time_start
+    msg <- paste('Time elapsed:', time.diff, units(time.diff), 'on', threads, 'cores.')
+    message(msg)
+
+    # Exit 0
     slot(Reads(object, name), 'counts') <- as.data.frame(df)
-
     return(object)
 }
 
@@ -118,7 +178,7 @@ ReadsCounts <- function(object, name, recompute=FALSE, multicore=TRUE, threads=n
 #'
 #' @export
 #' 
-PlotReadsCounts <- function(object, name, base.size=20, label.size = 5, grid.cols=1,
+PlotReadsCounts <- function(object, name, label = 'index', base.size=20, label.size = 5, grid.cols=1,
                             top.point.size = 4, top.point.stroke = 1, jitter=FALSE,
                             bottom.point.size = 3, bottom.point.stroke = 1, bottom.text.size = 10
                            ) {
@@ -130,6 +190,10 @@ PlotReadsCounts <- function(object, name, base.size=20, label.size = 5, grid.col
     stopifnot(
         !is.null(df)
     )
+
+    # Select label
+    df$label <- df[[label]]
+    df$label[df$type == 'R2'] <- NA
 
     # Translate type
     lookup <- c('R1' = 'Short reads (forward)', 'R2' = 'Short reads (reverse)', 'S' = 'Short reads (unpaired)', 'L' = 'Long reads')
@@ -143,12 +207,10 @@ PlotReadsCounts <- function(object, name, base.size=20, label.size = 5, grid.col
     # Modify scales
     scale_jitter <- if (jitter) ggplot2::position_jitter(width=0.25) else ggplot2::position_identity()
 
-    # Select label
-    df$label <- if (length(df$alias)) df[['alias']] else df[['index']]
-
     # Plot
     p1 <- ggplot(data = df, mapping = aes(x=records, y=nucleotides, label=label)) +
-                ggrepel::geom_text_repel(force_pull = 0, force = 25, alpha=.8, size=label.size) +
+                #ggrepel::geom_text_repel(force_pull = 0, force = 25, alpha=.8, size=label.size) +
+                ggrepel::geom_text_repel(size=label.size, alpha=.8) +
                 geom_point(aes(col = type), shape=21, size=top.point.size, stroke=top.point.stroke) +
                 ggplot2::scale_color_manual(values = cols$type) +
                 ggplot2::scale_y_continuous(trans='log10') +
@@ -166,7 +228,8 @@ PlotReadsCounts <- function(object, name, base.size=20, label.size = 5, grid.col
     
     # Plot
     p2 <- ggplot(data = df, mapping = aes(x = index, y = nucleotides, label=label)) +
-                ggrepel::geom_text_repel(force_pull = 0, force = 1, alpha=.8, size=label.size) +
+                #ggrepel::geom_text_repel(force_pull = 0, force = 1, alpha=.8, size=label.size) +
+                ggrepel::geom_text_repel(size=label.size, alpha=.8) +
                 geom_point(aes(col = type), shape = 21, size = bottom.point.size, stroke=bottom.point.stroke, position=scale_jitter) +
                 ggplot2::scale_color_manual(values = cols$type) +
                 ggplot2::scale_y_continuous(trans='log10') +
@@ -203,9 +266,10 @@ summarize_read_quality <- function(fastq=NULL, read=NULL, min.base.quality=15, p
     )
 
     # Extract quality scores
-    qual <- as.character(as.matrix(fastq@quality@quality[[read]]))
+    code <- encoding(quality(fastq))
+    qual <- as.character(as.matrix(quality(fastq)[[read]]))
     result <- data.frame(
-        'quality' = encoding(quality(fastq))[qual],
+        'quality' =code[qual],
         'position' = 1:length(qual),
         'read' = read
     )
@@ -218,8 +282,9 @@ summarize_read_quality <- function(fastq=NULL, read=NULL, min.base.quality=15, p
     }
 
     # Summarize quality
-    result <- result %>% mutate(qualified = quality >= min.base.quality) %>% group_by(read)
-    result <- result %>% summarize(avg_quality = mean(quality), length = max(position), percent_qualified = sum(qualified)/length*100)
+    result <- dplyr::group_by(result, read)
+    result <- dplyr::mutate(result, qualified = quality >= min.base.quality)
+    result <- dplyr::summarize(result, avg_quality = mean(quality), length = max(position), percent_qualified = sum(qualified)/length*100)
 
     # EXIT 0
     return(result)
@@ -234,7 +299,7 @@ summarize_read_quality <- function(fastq=NULL, read=NULL, min.base.quality=15, p
 #' @param max.reads Integer, number of reads to sample
 #'
 #' @export
-summarize_fastq_quality <- function(in_file=NULL, min.base.quality=15, max.reads=5000) {
+summarize_fastq_quality <- function(in_file=NULL, max.reads=5000, min.base.quality=15, reads.present=character()) {
 
     # Check
     stopifnot(
@@ -242,24 +307,42 @@ summarize_fastq_quality <- function(in_file=NULL, min.base.quality=15, max.reads
         is_valid_fastq(in_file)
     )
 
-    # Long vs. short
-    # Paired end reads
+    # Exit 1
+    if (length(reads.present) >= max.reads) {
+        warning('Maximum number of reads reached. Will not sample more...')
+        return()
+    }
+
+    # Timestamp
+    time.start <- Sys.time()
     
     # Read file
-    # TODO: accept either file or in-memory FASTQ (reduce read time)
-    all_reads <- ShortRead::readFastq(in_file) # bottleneck
+    # fastq <- ShortRead::yield(ShortRead::FastqSampler(in_file, n = max.reads)) # Does not save too much time
+    fastq <- ShortRead::readFastq(in_file)
 
     # Index sample reads
-    n_reads <- length(all_reads)
-    n_reads <- ifelse(n_reads < max.reads, n_reads, max.reads)
-    some_reads <- sample(1:length(all_reads), n_reads)
-    names(some_reads) <- some_reads
+    all_reads <- 1:length(fastq)
+    if (length(reads.present)) {
+        ind <- !all_reads %in% reads.present
+        all_reads <- all_reads[ind]
+        max.reads <- max.reads - length(reads.present)
+    }
+    if (length(all_reads) > max.reads) {
+        reads <- sample(all_reads, max.reads, replace=FALSE)
+    } else {
+        reads <- all_reads
+    }
+    names(reads) <- reads
 
     # Compute read quality
-    some_reads <- lapply(some_reads, summarize_read_quality, fastq=all_reads, min.base.quality=min.base.quality)
-    some_reads <- dplyr::bind_rows(some_reads)
+    result <- lapply(reads, summarize_read_quality, fastq=fastq, min.base.quality=min.base.quality)
+    result <- dplyr::bind_rows(result, .id = 'read')
 
-    return(some_reads)
+    # Timestamp
+    time.stop <- Sys.time()
+    print(time.stop - time.start)    
+
+    return(result)
 }
 
 #' ReadsQuality
@@ -269,9 +352,17 @@ summarize_fastq_quality <- function(in_file=NULL, min.base.quality=15, max.reads
 #' @param object genomeCollection
 #' @param read.col Column in metadata(object) containing FASTQ file paths
 #' @param threads Integer, number of threads to use
+#' @param debug Whether to run debugging mode: run as many samples as threads
 #'
-ReadsQuality <- function(object, name, max.reads=5000, min.base.quality=15, 
-                         recompute=FALSE, threads=n_proc()
+ReadsQuality <- function(object, name, 
+                         max.reads = 5000, 
+                         min.base.quality = 15, 
+                         multicore = TRUE,
+                         recompute = FALSE, 
+                         recompute.sample = NULL,
+                         threads = n_proc(), 
+                         debug = FALSE, 
+                         debug.n = threads
                         ) {
 
     # Minimal check
@@ -285,6 +376,8 @@ ReadsQuality <- function(object, name, max.reads=5000, min.base.quality=15,
     if (!dir.exists(dirname(csv))) {
         dir.create(dirname(csv))
     }
+
+    # Handling sample duplicates
     id <- if (length(data$alias)) 'alias' else 'index'
     if (id == 'alias') {
         lookup <- setNames(data$index, data$alias)
@@ -292,75 +385,107 @@ ReadsQuality <- function(object, name, max.reads=5000, min.base.quality=15,
 
     # Check output
     df <- data$quality
-    if (recompute) {
-        compute <- TRUE
+    if (length(data$quality)) {
+        msg <- paste('Retrieved slot "quality" from Reads(object,"', name, '").')
+        message(msg)
     } else
-    if (!length(df) & file.exists(csv)) {
+    if (file.exists(csv)) {
         msg <- paste('File',csv,'found in path(object)')
         message(msg)
         df <- readr::read_csv(csv)
-        compute <- FALSE
-    } else
-    if (length(df) & all(data$index %in% df$index)) {
-        msg <- 'Read quality summary has been detected for all samples.'
-        message(msg)
-        compute <- FALSE
+    }
+    if (is.null(df$name)) { # Enfore current formatting requirement: NAME
+        df <- data.frame()
+    }
+
+    # Subset
+    ind <- !is.na(df$name)
+    if (any(ind)) {
+        df <- df[ind, ]
+    }
+
+    # Re-compute samples
+    ind <- df$index %in% recompute.sample
+    if (sum(ind)) {
+        df <- df[!ind, ]
+    }
+    
+    # Timestamp
+    time_start <- Sys.time()
+
+    # Index missing samples
+    done <- if (recompute) character() else unique(df$name)
+    allfiles <- character()
+    for (i in c('R1', 'R2', 'S', 'L')) {
+        somefiles <- slot(data, i)
+        if (!length(slot(data, i))) next
+        names(somefiles) <- paste(slot(data, id), i, sep='_')
+        allfiles <- c(allfiles, somefiles)
+    }
+    allfiles <- allfiles[!is.na(allfiles)] # ignore NAs arising from some hybrid assemblies
+    
+    # Add to missing if reads_present < max.reads
+    df$name <- factor(df$name, levels = names(allfiles))
+    df$read <- as.character(df$read)
+    reads_present <- split(df$read, df$name, drop=FALSE)
+    
+    ind <- which(sapply(reads_present, length) < max.reads)
+    threads <- if (multicore) threads else 1 # Multicore
+    ind <- if (debug) head(ind, debug.n) else ind # Debug mode
+    reads_present <- reads_present[ind]
+    missing <- allfiles[ind]
+
+    # Exit 1
+    if (!length(missing)) {
+        slot(Reads(object, name), 'quality') <- as.data.frame(df)
+        return(object)
+    }
+
+    # User messages
+    n_reads <- length(missing) * max.reads - sum(sapply(reads_present, length))
+    msg <- paste(length(done), 'out of', length(allfiles), 'files have been quality checked. Adding', n_reads, 'reads for', length(missing), 'samples...')
+    message(msg)
+
+    time.est <- (8 * length(missing) + n_reads * 0.01) / 60
+    time.est <- round(time.est, 2)
+    msg <- paste('Estimated runtime is', time.est, 'minutes', 'across', threads, 'cores')
+    message(msg)
+
+    # Main
+    if (multicore) {
+        result <- parallel::mcMap(summarize_fastq_quality, in_file = missing, max.reads = max.reads, reads.present = reads_present, mc.cores = threads)
     } else {
-        compute <- TRUE
+        result <- Map(summarize_fastq_quality, in_file = missing, max.reads = max.reads, reads.present = reads_present)
     }
+    ind <- which(unlist(lapply(result, is.data.frame))) # Some cores will return <try-error>, remove ...
+    result <- dplyr::bind_rows(result[ind], .id = 'name')
+    df <- dplyr::bind_rows(df, result)
 
-
-    # Run countFastq
-    if (compute) {
-        # Timestamp
-        time_start <- Sys.time()
-        
-        msg <- paste0('Summarizing FASTQ quality for Reads(object, "', name, '").')
-        message(msg)
-
-        df <- list()
-        for (i in c('R1','R2','S','L')) {
-            files <- slot(data, i)
-            ind <- file.exists(files)
-            files <- files[ind]
-            if (!length(files)) next
-
-            # Set names
-            names(files) <- slot(data, id)[ind]
-            
-            # Estimate runtime
-            single.time.start <- Sys.time()
-            discard <- summarize_fastq_quality(files[[1]], min.base.quality=min.base.quality, max.reads=max.reads)
-            single.time.stop <- Sys.time()
-            time.diff <- single.time.stop-single.time.start
-            time.est <- time.diff*length(files)/threads
-            msg <- paste('Estimated runtime for slot', i, 'is', time.est, units(time.est), 'on', threads, 'cores.')
-            message(msg)
-
-            # Apply for all
-            df[[i]] <- parallel::mclapply(files, summarize_fastq_quality, min.base.quality=min.base.quality, max.reads=max.reads, mc.cores = threads)
-            df[[i]] <- dplyr::bind_rows(df[[i]], .id = id)
-        }
-
-        # Combine across read types
-        df <- dplyr::bind_rows(df, .id = 'type')
-        if (length(df$alias)) {
-            df$index <- lookup[df$alias]
-        }
-
-        # Save counts
-        readr::write_csv(df, csv)
-
-        ## Timestamp
-        time_stop <- Sys.time()
-        time.diff <- time_stop-time_start
-        msg <- paste('Time elapsed:', time.diff, units(time.diff), 'on', threads, 'cores.')
-        message(msg)
+    # Format
+    if (id == 'alias') {
+        df$alias <- stringr::str_split(df$name, '_', simplify=TRUE)[,1]
+        df$index <- lookup[df$alias]
+    } else {
+        df$index <- stringr::str_split(df$name, '_', simplify=TRUE)[,1]
+        df$alias <- NULL
     }
+    df[['type']] <- stringr::str_split(df$name, '_', simplify=TRUE)[,2]
 
-    # Replace
+    # Subset
+    ind <- which(df$name %in% names(allfiles))
+    df <- df[ind, ] # c('name','records','nucleotides','scores','file','alias','index','type')
+    
+    # Save counts
+    readr::write_csv(df, csv)
+
+    ## Timestamp
+    time_stop <- Sys.time()
+    time.diff <- time_stop-time_start
+    msg <- paste('Time elapsed:', time.diff, units(time.diff), 'on', threads, 'cores.')
+    message(msg)
+
+    # Exit 0
     slot(Reads(object, name), 'quality') <- as.data.frame(df)
-
     return(object)
 }
 
@@ -377,7 +502,7 @@ ReadsQuality <- function(object, name, max.reads=5000, min.base.quality=15,
 #' 
 PlotReadsQuality <- function(object, name, x='length', y='avg_quality', col='type', wrap='index', 
                              L.lenght_required = 100L, L.average_quality = 20L, L.percent_qualified = 50L,
-                             S.lenght_required = 50L, S.average_quality = 30L, S.percent_qualified = 50L,
+                             S.lenght_required = 30L, S.average_quality = 20L, S.percent_qualified = 50L,
                              base.size=20, pt.size=.5, pt.shape=21, pt.stroke=.5,
                              wrap.rows=NULL, wrap.cols=NULL
                             ) {
@@ -467,7 +592,8 @@ fastplong <- function(file_in=NULL, file_out=NULL,
                       mean_qual=20L,
                       unqualified_percent_limit=40L, 
                       qualified_quality_phred = 15L,
-                      threads=n_proc(), overwrite=FALSE
+                      threads=n_proc(), 
+                      overwrite=FALSE
                      ) {
 
     # Minimal check
@@ -491,16 +617,21 @@ fastplong <- function(file_in=NULL, file_out=NULL,
         stop(msg)
     }
 
-    # TODO: function writes fastplong.html and fastplong.json to working directory. Should be stored in log/ or similar...
+    # Output files
+    output.dir <- dirname(file_out)
+    output.json <- paste0(output.dir,'/report.json')
+    output.html <- paste0(output.dir,'/report.html')
     
     # Main
-    cmd <- paste0('fastplong -i ',file_in,' -o ',file_out)
-    cmd <- paste0(cmd,
-                  ' --length_required ',length_required,
-                  ' --mean_qual ',mean_qual,
-                  ' --unqualified_percent_limit ',unqualified_percent_limit,
-                  ' --qualified_quality_phred ',qualified_quality_phred,
-                  ' --thread ',threads
+    cmd <- paste('fastplong', '-i', file_in, '-o', file_out)
+    cmd <- paste(cmd,
+                  '--length_required',length_required,
+                  '--mean_qual',mean_qual,
+                  '--unqualified_percent_limit',unqualified_percent_limit,
+                  '--qualified_quality_phred',qualified_quality_phred,
+                  '--thread',threads,
+                  '--json',output.json,
+                  '--html',output.html
                  )
     cmd <- paste(cmd,'2>&1')
     system(cmd, intern=TRUE)
@@ -563,11 +694,13 @@ fastp <- function(input_read_1 = NULL,
             return('Exit 2: Output exists.')
         }
     }
-    output.dir <- dirname(output_read_1)
-    output.json <- paste0(output.dir,'/',str_replace(basename(output_read_1),'.fastq.gz','.json'))
-    output.html <- paste0(output.dir,'/',str_replace(basename(output_read_1),'.fastq.gz','.html'))
 
-    # Run FastP
+    # Output files
+    output.dir <- dirname(output_read_1)
+    output.json <- paste0(output.dir,'/report.json')
+    output.html <- paste0(output.dir,'/report.html')
+
+    # Main
     if (paired) {
         cmd <- paste('fastp','-i',input_read_1,'-I',input_read_2,'-o',output_read_1,'-O',output_read_2)
     } else {
@@ -612,11 +745,13 @@ FilterReads <- function(object, name.from = 'raw', name.to = 'filtered',
                         fastplong.length_required = 100L, 
                         fastplong.mean_qual = 20L, 
                         fastplong.unqualified_percent_limit = 40L, 
-                        fastplong.qualified_quality_phred = 15L
+                        fastplong.qualified_quality_phred = 15L,
+                        recompute = FALSE,
+                        recompute.sample = NULL
                        ) {
 
     # Minimal check
-    if (name.to %in% ReadsNames(object)) {
+    if (name.to %in% ReadsNames(object) & !recompute & length(recompute.sample) == 0) {
         msg <- paste0('Reads(object, "',name.to,'") already exists. Aborting...')
         warning(msg)
         return(object)
@@ -631,26 +766,24 @@ FilterReads <- function(object, name.from = 'raw', name.to = 'filtered',
         msg <- paste0('Alias present in Reads(object, "', name.from, '"). Multiple read files of the same sample will be concatenated...')
         warning(msg)
 
-        samples <- data$index[which(data$alias != data$index)]
+        samples.concat <- data$index[which(data$alias != data$index)]
         ind.keep <- which(data$alias == data$index)
         
         for (type in types) {
             vector <- slot(data, type)
             if (!length(vector)) next # Skip empty vectors
-            for (sample in samples) {
+            for (sample in samples.concat) {
                 cat(sample, type, '\n')
                 ind <- which(data$index == sample)
                 old.files <- slot(data, type)[ind]
-                suffix <- unique(stringr::str_split(old.files, '\\.', simplify=TRUE)[, 2])
-                if (length(suffix) > 1) {
-                    msg <- paste('Trying to concatenate files of different suffix:', paste(suffix, collapse=', '))
-                    stop(msg)
-                }
+                # .fastq.gz expected, not handling anything else!!!                
                 old.files <- paste0(old.files, collapse=' ')
-                new.file <- paste0(path(object),'assemblies/',sample,'/reads/raw/',type,'.',suffix)
-                dir.create(dirname(new.file), recursive=TRUE, showWarnings = FALSE)
-                cmd <- paste('cat',old.files,'>',new.file)
-                system3(cmd)
+                new.file <- paste0(path(object),'assemblies/',sample,'/reads/raw/',sample,'_',type,'.fastq.gz')
+                if (!file.exists(new.file)) {
+                    dir.create(dirname(new.file), recursive=TRUE, showWarnings = FALSE)
+                    cmd <- paste('cat',old.files,'>',new.file)
+                    system3(cmd)
+                }
                 ind.replace <- which(data$alias == sample)
                 vector[ind.replace] <- new.file
             }
@@ -670,6 +803,8 @@ FilterReads <- function(object, name.from = 'raw', name.to = 'filtered',
     for (type in transfer.types) {
         df[[type]] <- paste0(path(object),'assemblies/', df$index, '/reads/filtered/',type,'.fastq')
     }
+    recompute.sample <- if (recompute) df$index else recompute.sample # Select samples to re-compute
+    recompute.sample <- df$index[df$index %in% recompute.sample] # Make sure they exist
 
     # Run FastP(long)
     if (length(df$R1) & length(df$R2)) {
@@ -677,46 +812,69 @@ FilterReads <- function(object, name.from = 'raw', name.to = 'filtered',
         for (n in 1:length(df$index)) {
             from.1 <- data$R1[[n]]
             from.2 <- data$R2[[n]]
+            sample <- df$index[[n]]
             to.1 <- df$R1[[n]]
             to.2 <- df$R2[[n]]
-            if (!file.exists(fromfile)) { # Needed to not break hybrid assemblies for some samples ...
+            if (!file.exists(from.1)) { # Needed to not break hybrid assemblies for some samples ...
                 df$R1[[n]] <- NA
                 df$R2[[n]] <- NA
                 next
             }
-            if (file.exists(to.1)) next
+            if (file.exists(to.1) & !sample %in% recompute.sample) next
             print(paste0(data$index[[n]],' (',n,'/',length(data$index),')'))
             # Run fastp
             dir.create(dirname(to.1), recursive=TRUE, showWarnings=FALSE)
             fastp(from.1, to.1, from.2, to.2,
                   length_required = fastp.length_required, average_quality = fastp.average_quality, 
                   unqualified_percent_limit = fastp.unqualified_percent_limit, 
-                  qualified_quality_phred = fastp.qualified_quality_phred
+                  qualified_quality_phred = fastp.qualified_quality_phred,
+                  overwrite = TRUE
                  )
         }
     }
     
     if (length(df$S)) {
-        stop('Running fastp for unpaired, short reads (S) IS NOT IMPLEMENTED YET!!!')
+        message('Running fastp for unpaired, short reads (S).')
+        for (n in 1:length(df$index)) {
+            fromfile <- data$S[[n]]
+            sample <- df$index[[n]]
+            tofile <- df$S[[n]]
+            if (!file.exists(fromfile)) { # Needed to not break hybrid assemblies for some samples ...
+                df$S[[n]] <- NA
+                next
+            }
+            if (file.exists(tofile) & !sample %in% recompute.sample) next
+            print(paste0(data$index[[n]],' (',n,'/',length(data$index),')'))
+            # Run fastp
+            dir.create(dirname(to.1), recursive=TRUE, showWarnings=FALSE)
+            fastp(fromfile, tofile,
+                  length_required = fastp.length_required, average_quality = fastp.average_quality, 
+                  unqualified_percent_limit = fastp.unqualified_percent_limit, 
+                  qualified_quality_phred = fastp.qualified_quality_phred,
+                  overwrite = TRUE
+                 )
+        }
     }
     
     if (length(df$L)) {
         message('Running fastplong for long reads (L).')
         for (n in 1:length(df$index)) {
             fromfile <- data$L[[n]]
+            sample <- df$index[[n]]
             tofile <- df$L[[n]]
             if (!file.exists(fromfile)) { # Needed to not break hybrid assemblies for some samples ...
                 df$L[[n]] <- NA
                 next
             }
-            if (file.exists(tofile)) next
+            if (file.exists(tofile) & !sample %in% recompute.sample) next
             print(paste0(data$index[[n]],' (',n,'/',length(data$index),')'))
             # Run fastplong
             dir.create(dirname(tofile), recursive=TRUE, showWarnings=FALSE)
             fastplong(fromfile, tofile, 
                       length_required = fastplong.length_required, mean_qual = fastplong.mean_qual, 
                       unqualified_percent_limit = fastplong.unqualified_percent_limit, 
-                      qualified_quality_phred = fastplong.qualified_quality_phred
+                      qualified_quality_phred = fastplong.qualified_quality_phred,
+                      overwrite = TRUE
                      )
         }
     }

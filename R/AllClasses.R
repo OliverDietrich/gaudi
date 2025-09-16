@@ -67,16 +67,77 @@ methods::setClass(
 #' The Assembly object stores file paths for genome assemblies. The core components are
 #' the genome FASTA file (necessary) and the assembly graph (optional).
 #'
+#' @slot index A character vector sample indices matching index(genomeCollection)
 #' @slot genome A character vector with paths to the genome FASTA.
 #' @slot graph A character vector with paths to the genome assembly graph (GFA).
 #' @slot log A character vector with paths to the assembly log file.
+#' @slot reads A character vector indicating the slot name in ReadsNames(object).
+#' @slot tool A character vector indicating the assembly tool (e.g. SPAdes, Flye, Unicycler, ...)
+#' @slot type A character vector indicating the assembly type
 #'
 methods::setClass(
     Class = "Assembly",
     slots = c(
+        index = "character",
+        contig = "character",
+        graph = "character",
+        log = "character",
+        reads = "character",
+        tool = "character",
+        type = "character"
+    )
+)
+
+#' The Annotation class
+#'
+#' The Annotation object stores file paths for genome annotation The core components are
+#' the genes GFF file, the coding sequences (CDS) FASTA, the protein FASTA.
+#'
+#' @slot index A character vector sample indices matching index(genomeCollection)
+#' @slot genes A character vector with paths to the genes GFF.
+#' @slot cds A character vector with paths to the coding sequences FASTA.
+#' @slot proteins A character vector with paths to the protein FASTA.
+#' @slot log A character vector with paths to the annotation log file.
+#' @slot genome A character vector indicating the column in metadata(genomeCollection) storing genome locations.
+#' @slot tool A character vector indicating the annotation tool (e.g. Bakta, Padloc, DefenseFinder, ...)
+#' @slot type A character vector indicating the annotation type
+#'
+methods::setClass(
+    Class = "Annotation",
+    slots = c(
+        index = "character",
+        genes = "character",
+        cds = "character",
+        proteins = "character",
+        log = "character",
         genome = "character",
-        genome_graph = "character",
-        log = "character"
+        tool = "character",
+        type = "character"
+    )
+)
+
+#' The Distance class
+#'
+#' The Distance object stores file paths for genome distances to infer phylogeny.
+#' The core components are ...
+#'
+#' @slot index A character vector sample indices matching index(genomeCollection)
+#' @slot distance ...
+#' @slot sketches ...
+#' @slot log A character vector with paths to the annotation log file.
+#' @slot tool A character vector indicating the distance tool (e.g. Mash, FastANI, skani, MMseqs, MUMer, Foldseek, ...)
+#' @slot type A character vector indicating the distance type (e.g. genome, CDS, protein, ...)
+#'
+methods::setClass(
+    Class = "Distance",
+    slots = c(
+        index = "character",
+        distance = "character",
+        sketches = "character",
+        log = "character",
+        sequences = "character",
+        tool = "character",
+        type = "character"
     )
 )
 

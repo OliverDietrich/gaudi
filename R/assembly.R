@@ -36,27 +36,49 @@ skesa_assembly <- function() {
 #' @param input.1 File name, file with forward paired-end reads
 #' @param input.2 File name, file with reverse paired-end reads
 #' @param input.s File name, file with unpaired reads
+#' @param out.dir Path to output directory
 #' @param threads Integer, number of threads to use
 #' @param overwrite Boolean, whether to overwrite output
 #'
 #' @export
 spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL, 
-                            output=NULL,
-                            threads=n_proc(), overwrite=FALSE
+                            out.dir=NULL,
+                            isolate = FALSE,
+                            single.cell = FALSE,
+                            metagenomic = FALSE,
+                            biosynthetic = FALSE,
+                            sewage = FALSE,
+                            corona = FALSE,
+                            rna = FALSE,
+                            plasmid = FALSE,
+                            metaviral = FALSE,
+                            metaplasmid = FALSE,
+                            rnaviral = FALSE,
+                            log.file = NULL,
+                            threads=n_proc(), 
+                            overwrite=FALSE
                            ) {
 
     # Minimal check
     stopifnot(
-        !is.null(output)
+        !is.null(out.dir)
     )
     check_installed('spades.py', silent=TRUE)
     check_version('spades.py')
 
+    # Variables
+    out.dir <- if(endsWith(out.dir, '/')) out.dir else paste0(out.dir, '/')
+    log.file <- if (is.null(log.file)) paste0(out.dir, 'runtime.log') else log.file
+    contigs.fasta <- paste0(out.dir, 'contigs.fasta')
+    
+
     # Check output
-    if (file.exists(output)) {
-        msg <- paste('Output file',output,'already exists. Will be skipped...')
+    if (file.exists(contigs.fasta) & !overwrite) {
+        msg <- paste('Output file',contigs.fasta,'already exists. Will be skipped...')
         warning(msg)
-        return(1)
+        return()
+    } else if (overwrite) {
+        unlink(out.dir, recursive = TRUE)
     }
 
     # Check input
@@ -79,14 +101,124 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
         stop(msg)
     }
 
-    # Run SPAdes
-    cmd <- 'spades.py'
-    cmd <- paste(cmd, input,'-o', output,'--threads',threads)
-    cmd <- paste(cmd,'2>&1')
-    stdout <- system(cmd, intern=TRUE)
-    stdout <- paste(stdout, collapse='\n')
-    cat(stdout)
-    return(0)
+    # Add flags
+    flags <- list()
+    flags$isolate <- if(isolate) '--isolate' else NULL
+    flags$sc <- if(single.cell) '--sc' else NULL
+    flags$meta <- if(metagenomic) '--meta' else NULL
+    flags$bio <- if(biosynthetic) '--bio' else NULL
+    flags$sewage <- if(sewage) '--sewage' else NULL
+    flags$corona <- if(corona) '--corona' else NULL
+    flags$rna <- if(rna) '--rna' else NULL
+    flags$plasmid <- if(plasmid) '--plasmid' else NULL
+    flags$metaviral <- if(metaviral) '--metaviral' else NULL
+    flags$metaplasmid <- if(metaplasmid) '--metaplasmid' else NULL
+    flags$rnaviral <- if(rnaviral) '--rnaviral' else NULL
+    flags <- paste(unlist(flags), collapse=' ')
+    flags <- if (flags == '') NULL else flags
+
+    # Main
+    cmd <- paste('spades.py', input,'-o', out.dir,'--threads',threads, flags)
+    system3(cmd, log.file)
+}
+
+#' RunSPAdes
+#'
+#' Run SPAdes assembly for a genomeCollection
+#' 
+#' @param object A genomeCollection object
+#' @param name Slot to use for Assemblies(object)
+#' @param type Type of reads to use for assembly. One of paired, unpaired.
+#' @param reads.name Slot in ReadsNames(object
+#' @param threads Number of cores to use
+#'
+#' @export
+#'
+RunSPAdes <- function(object, name = 'SPAdes',
+                      type = 'paired',
+                      reads.name='filtered',
+                      recompute = FALSE,
+                      recompute.sample = NULL,
+                      ...
+                     ) {
+    
+    # Minimal check
+    stopifnot(
+        reads.name %in% ReadsNames(object)
+    )
+
+    # Fetch data
+    reads <- Reads(object, reads.name)
+    
+    # Check input
+    if (type == 'paired') {
+        ind.reads <- file.exists(reads$R1) & file.exists(reads$R2)
+        input.1 <- reads$R1[ind.reads]
+        input.2 <- reads$R2[ind.reads]
+        input.s <- NULL
+    } else 
+    if (type == 'unpaired') {
+        ind.reads <- file.exists(reads$S)
+        input.1 <- NULL
+        input.2 <- NULL
+        input.s <- reads$S[ind.reads]
+    } else {
+        msg <- paste('Type', type, 'not found. Options: paired, unpaired.')
+        stop(msg)
+    }
+    msg <- paste('Found', sum(ind.reads), 'samples with', type, 'reads.')
+    message(msg)
+
+    # Variables
+    samples <- reads$index[ind.reads]
+    path <- object$path[match(samples, index(object))]
+    output <- paste0(path, 'assembly/SPAdes/')
+    contigs <- paste0(output, 'contigs.fasta')
+    graphs <- paste0(output, 'assembly_graph_after_simplification.gfa')
+    log <- paste0(output, 'runtime.log')
+
+    # Create object
+    data <- Assembly(object, name)
+    if (is.null(data)) {
+        data <- methods::new("Assembly", 
+                             "index" = samples,
+                             "contig" = contigs,
+                             "graph" = graphs,
+                             "log" = log,
+                             "reads" = reads.name,
+                             "tool" = 'SPAdes',
+                             "type" = type
+                            )
+    }
+    check <- all(data$index == samples) & all(data$contig == contigs) & all(data$log == log) & data$reads == reads.name
+    if (!check) {
+        msg <- paste0('Some slots in Assembly(object, "', name, '") do not contain the correct data. Aborting...')
+        stop(msg)
+    }
+
+    # Check output
+    ind <- file.exists(contigs)
+    missing <- if (recompute) samples else samples[!ind]
+    missing <- if (length(recompute.sample)) recompute.sample else missing # Debug mode
+    msg <- paste('Assembly found for', sum(ind), 'samples. Running SPAdes for', length(missing), 'samples...')
+    message(msg)
+    
+    # Main
+    for (sample in samples) {
+        if (!sample %in% missing) next
+        cat(sample)
+        i <- which(samples == sample)
+        spades_assembly(input.1 = input.1[[i]], input.2 = input.2[[i]], input.s = input.s[[i]], 
+                        out.dir = output[[i]], 
+                        log.file = log[[i]], 
+                        overwrite = TRUE, 
+                        ...
+                       )
+    }
+
+    # Replace assembly
+    Assembly(object, name) <- data
+    return(object)
 }
 
 #' Unicycler assembly
@@ -107,27 +239,136 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
 #' @param threads Number of threads used
 #'
 #' @export
-unicycler_assembly <- function(short.1=NULL, short.2=NULL, unpaired=NULL, 
-                               long=NULL, out.dir, 
-                               keep = 1, mode = 'normal',
+unicycler_assembly <- function(short.1=NULL, short.2=NULL, unpaired=NULL, long=NULL, 
+                               out.dir=NULL, 
+                               log.file=NULL,
+                               keep = 1, 
+                               mode = 'normal',
                                min_fasta_length=100,
                                linear_seqs = 0,
-                               threads = n_proc()
+                               threads = n_proc(), 
+                               overwrite = FALSE
                               ) {
 
     # Minimal check
+    stopifnot(
+        !all(is.null(c(short.1, short.2, unpaired, long))),
+        !is.null(out.dir)
+    )
 
     # Variables
+    out.dir <- if (endsWith(out.dir, '/')) out.dir else paste0(out.dir, '/')
+    out.fasta <- paste0(out.dir, 'assembly.fasta')
+    out.gfa <- paste0(out.dir, 'assembly.gfa')
 
     # Check output
+    if (overwrite) {
+        unlink(out.dir, recursive=TRUE)
+    }
+    if (!dir.exists(out.dir)) {
+        dir.create(out.dir, recursive=TRUE)
+    }
+    if (file.exists(out.fasta)) {
+        msg <- paste('Output file', out.fasta, 'already exists.')
+        warning(msg)
+        return()
+    }
 
     # Check input
+    short.1 <- if (is.na(short.1)) NULL else short.1
+    short.2 <- if (is.na(short.2)) NULL else short.2
+    unpaired <- if (is.na(unpaired)) NULL else unpaired
+    long <- if (is.na(long)) NULL else long
+    if (length(short.1) & length(short.2) & length(unpaired)) {
+        msg <- 'Found both paired and unpaired reads. This might fail...'
+        warning(msg)
+    }
+    paired <- if (length(short.1) & length(short.2)) paste('--short1',short.1,'--short2',short.2) else NULL
+    unpaired <- if (length(unpaired)) paste('--unpaired',unpaired) else NULL
+    long <- if (length(long)) paste('--long',long) else NULL
 
     # Main
-    stdout <- system3('unicycler')
-    
-    # Format output
-    cat(stdout)
+    cmd <- paste('unicycler', paired, unpaired, long, '--out', out.dir, '--keep', keep, '--mode', mode, '--linear_seqs', linear_seqs, '-t', threads)
+    system3(cmd, log.file = log.file)
+}
+
+#' Run Unicycler
+#'
+#' Run Unicycler assembly for a genomeCollection
+#' 
+#' @param object A genomeCollection object
+#' @param name Slot to use for Assemblies(object)
+#' @param type Type of reads to use for assembly. One of paired, unpaired.
+#' @param reads.name Slot in ReadsNames(object
+#' @param threads Number of cores to use
+#'
+#' @export
+#'
+RunUnicycler <- function(object, name = 'Unicycler',
+                         reads.name = 'filtered',
+                         recompute = FALSE,
+                         recompute.sample = NULL,
+                         ...
+                        ) {
+
+    # Minimal check
+    stopifnot(
+        reads.name %in% ReadsNames(object)
+    )
+
+    # Fetch data
+    reads <- Reads(object, reads.name)
+
+    # Variables
+    samples <- reads$index
+    path <- object$path[match(samples, index(object))]
+    output <- paste0(path, 'assembly/Unicycler/')
+    contigs <- paste0(output, 'assembly.fasta')
+    graphs <- paste0(output, 'assembly.gfa')
+    log <- paste0(output, 'runtime.log')
+
+    # Create object
+    data <- Assembly(object, name)
+    if (is.null(data)) {
+        data <- methods::new("Assembly", 
+                             "index" = samples,
+                             "contig" = contigs,
+                             "graph" = graphs,
+                             "log" = log,
+                             "reads" = reads.name,
+                             "tool" = 'Unicycler',
+                             "type" = 'Will auto-detect type for each sample...'
+                            )
+    }
+    check <- all(data$index == samples) & all(data$contig == contigs) & all(data$log == log) & data$reads == reads.name
+    if (!check) {
+        msg <- paste0('Some slots in Assembly(object, "', name, '") do not contain the correct data. Aborting...')
+        stop(msg)
+    }
+
+    # Check output
+    ind <- file.exists(contigs)
+    missing <- if (recompute) samples else samples[!ind]
+    missing <- if (length(recompute.sample)) recompute.sample else missing # Debug mode
+    msg <- paste('Assembly found for', sum(ind), 'samples. Running Unicycler for', length(missing), 'samples...')
+    message(msg)
+
+    # Main
+    for (sample in samples) {
+        if (!sample %in% missing) next
+        cat(sample)
+        i <- which(samples == sample)        
+        unicycler_assembly(short.1 = reads$R1[i], short.2 = reads$R2[i], unpaired = reads$S[i], long = reads$L[i],
+                        out.dir = output[[i]],
+                        log.file = log[[i]], 
+                        overwrite = TRUE, 
+                        ...
+                       )
+    }
+
+    # Replace assembly
+    Assembly(object, name) <- data
+    return(object)
 }
 
 #' Raven assembly
@@ -277,4 +518,246 @@ medaka_polish <- function(input.fastx=NULL, input.assembly=NULL, out.dir=NULL,
 
     # Format output
     cat(stdout)
+}
+
+#' Polypolish
+#'
+#' CLI wrapper for Polypolish for short-read polishing of long-read assemblies.
+#' 
+#' @param assembly FASTA input assembly
+#' @param out.dir Output folder
+#' @param short.1 FASTQ file of first short reads in each pair (R1)
+#' @param short.2 FASTQ file of second short reads in each pair (R2)
+#' @param unpaired FASTQ file of unpaired short reads (S)
+#' @param long FASTQ or FASTA file of long reads
+#'
+#' @export
+polypolish <- function(assembly, out.dir,
+                       short.1=NULL, short.2=NULL, unpaired=NULL,
+                       threads = n_proc(),
+                       overwrite = FALSE
+                      ) {
+
+    # Minimal check
+    stopifnot(
+        is_file(assembly)
+    )
+    check_installed('polypolish', silent=TRUE)
+    check_version('polypolish')
+
+    # Variables
+    out.dir <- if (endsWith(out.dir, '/')) out.dir else paste0(out.dir,'/')
+    dir.create(out.dir, recursive=TRUE)
+    log.align.unpaired <- paste0(out.dir,'minimap_unpaired.log')
+    log.align.paired <- paste0(out.dir,'minimap_paired.log')
+    out.file <- paste0(out.dir,'polished.fasta')
+    paired.alignment.sam <- NULL
+    unpaired.alignment.sam <- NULL
+
+    # Output
+    if (file.exists(out.file) & !overwrite) {
+        msg <- paste('Output file', out.file, 'already exists.')
+        warning(msg)
+        return()
+    }
+
+    # Timestamp
+    t.start <- Sys.time()
+
+    # Alignment
+    ## None
+    if (is.null(short.1) & is.null(short.2) & is.null(unpaired)) stop('Please supply any short reads.')
+    # Unpaired
+    if (length(unpaired) == 1) {
+        msg <- paste('Unpaired read file',unpaired,'does not exist.')
+        if (!file.exists(unpaired)) stop(msg)
+        unpaired.alignment.sam <- paste0(out.dir,'unpaired.sam')
+        message('Running minimap2 for unpaired (S) reads...')
+        cmd <- paste('minimap2','-t',threads,'-a','-x','sr',assembly,unpaired,'-o',unpaired.alignment.sam)
+        system3(cmd) # , log.file = log.align.unpaired
+    }
+    ## Paired
+    if (length(short.1) | length(short.2)) {
+        if (is.null(short.1) | is.null(short.2)) stop('Please supply both forward and reverse reads for paired reads.')
+        unpaired <- c(short.1, short.2)
+        ind <- file.exists(unpaired)
+        msg <- paste('Paired read file(s)',paste(unpaired[ind], collapse=', '),'does not exist.')
+        if (!all(ind)) stop(msg)
+        paired.alignment.sam <- paste0(out.dir,'paired.sam')
+        message('Running minimap2 for paired (R1+R2) reads...')
+        cmd <- paste('minimap2','-t',threads,'-a','-x','sr',assembly,short.1,short.2,'-o',paired.alignment.sam)
+        system3(cmd) # , log.file = log.align.paired
+    }    
+
+    # Main
+    message('Running polypolish...')
+    cmd <- paste('polypolish','polish',assembly,paired.alignment.sam,unpaired.alignment.sam,'>',out.file)
+    system3(cmd, include.errors = FALSE)
+
+    # Cleanup
+    unlink(paired.alignment.sam)
+    unlink(unpaired.alignment.sam)
+
+    # Timestamp
+    t.stop <- Sys.time()
+    print(t.stop - t.start)
+}
+
+#' Assembly summary
+#' 
+#' Create a summary of the contigs contained in an Assembly object.
+#'
+#' @param object genomeCollection
+#' @param name Slot name of Assembly object in genomeCollection
+#' @param filter Data.frame with filters to apply. Columns: sample, length.min, length.max, cov.min. (Not checked, experimental...)
+#' @param min.size Minimum size of contigs, either single value or threshold for each sample
+#' @param min.coverage Minimum coverage of contigs, either single value or threshold for each sample
+#' @param max.size Maximum size of contigs, either single value or threshold for each sample
+#' @param return.filter Whether to return the filter data.frame. Used to adjust thresholds for individual samples and pass to 'filter' argument in second iteration.
+#' param debug Whether to run in debug mode. Returns a list containing the contigs, filter, and sequences.
+#'
+#' @importFrom ggplot2 ggplot aes geom_vline geom_line geom_point facet_wrap theme theme_classic guides element_line guide_legend
+#'
+#' @export
+#'
+CleanAssemblyToGenome <- function(object, name, 
+                                  filter = NULL,
+                                  min.size = 0, 
+                                  min.coverage = 0, 
+                                  max.size = Inf,
+                                  return.filter = FALSE,
+                                  debug = FALSE
+                                 ) {
+
+    # Minimal check
+    stopifnot(
+        class(object) == 'genomeCollection',
+        name %in% Assemblies(object)
+    )
+
+    # Input
+    data <- Assembly(object, name)
+
+    # Fetch components
+    graph <- setNames(data$graph, data$index)
+    graph <- graph[file.exists(graph)]
+    graph <- lapply(graph, read_assembly_graph, remove.seqs = FALSE)
+    #seqs <- purrr::map(graph, 'sequence')
+    #seqs <- Biostrings::DNAStringSet(do.call('c', lapply(seqs, as.character)))
+    contigs <- purrr::map(graph, 'segments')
+    contigs <- dplyr::bind_rows(contigs, .id = 'Sample')
+    contigs <- as.data.frame(contigs)
+    contigs$sample_group <- paste0(contigs$Sample,'_',contigs$Group)
+
+    # Filter
+    if (!length(filter)) {
+        filter <- data.frame(
+            'sample' = data$index,
+            'length.min' = min.size,
+            'length.max' = max.size,
+            'cov.min' = min.coverage
+        )
+    }
+    contigs <- merge(contigs, filter, by.x = 'Sample', by.y = 'sample')
+    contigs$filter <- 'Keep'
+    contigs$filter[contigs$Group_Length < contigs$length.min] <- 'Discard'
+    contigs$filter[contigs$Group_Length > contigs$length.max] <- 'Discard'
+    contigs$filter[contigs$Group_Coverage < contigs$cov.min] <- 'Discard'
+    
+    # Plot
+    plot <- ggplot(contigs, aes(Group_Length, Coverage, fill = filter, group = Group, shape = Circular)) +
+      geom_vline(xintercept = 5e3, linetype = 'dashed') +
+      geom_vline(xintercept = 2e5, linetype = 'dotted') +
+      geom_vline(xintercept = 3e5) +
+      geom_vline(xintercept = 6e6, linetype = 'dotted') +
+      geom_point(aes(size = Length), stroke=.1) +
+      geom_line() +
+      facet_wrap(~Sample, ncol = 5) +
+      ggplot2::scale_size(range = c(1,5), trans = 'log10') +
+      ggplot2::scale_shape_manual(values = c('TRUE'=21, 'FALSE'=24)) +
+      ggplot2::scale_y_continuous(trans = 'log10') +
+      ggplot2::scale_x_continuous(trans = 'log10') +
+      ggplot2::scale_fill_manual(values = c('Keep'='cyan3','Discard'='darkorange')) +
+      theme_classic(20) +
+      theme(
+          panel.grid.major.x = element_line(),
+          panel.grid.minor.x = element_line(),
+          panel.grid.major.y = element_line()
+      ) +
+      guides(
+          fill = guide_legend(override.aes = list(size = 5, shape = 21)),
+          shape = guide_legend(override.aes = list(size = 5))
+      )
+    suppressMessages(print(plot))
+
+    # Apply filter
+    index <- contigs$filter == 'Keep'
+    contigs <- contigs[index, ]
+    #seqs <- seqs[index]
+
+    # Set group names
+    groups <- dplyr::group_by(contigs, sample_group, Sample, Group) 
+    groups <- dplyr::summarize(groups, 
+                        Coverage = sum(Length * Coverage) / sum(Length), 
+                        Length = sum(Length),
+                        Contigs = sum(N)
+                       )
+    groups <- dplyr::arrange(groups, Sample, dplyr::desc(Length))
+    groups <- dplyr::mutate(dplyr::group_by(groups, Sample),
+                            group = LETTERS[1:length(Group)]
+                           )
+    lookup <- setNames(groups$group, groups$sample_group)
+    contigs$newgroup <- lookup[contigs$sample_group]    
+
+    # Order by new groups
+    index <- order(contigs$Sample, contigs$newgroup, contigs$Length, 
+                   decreasing = c(FALSE, FALSE, TRUE), 
+                   method = 'radix'
+                  )
+    contigs <- contigs[index, ]
+
+    # Re-name contigs
+    contigs <- mutate(dplyr::group_by(contigs, Sample, newgroup),
+       newcontig = 1:length(newgroup)
+      )
+
+    # Set sequence names
+    seqs <- Biostrings::DNAStringSet(contigs$Sequence)
+    names(seqs) <- paste0(contigs$Sample,
+                          '_',
+                          contigs$newgroup,contigs$newcontig,
+                          ' ','length=',contigs$Length,
+                          ' ','cov=',contigs$Coverage,
+                          ' ','circular=',contigs$Circular
+                         )
+    contigs$Sequence <- NULL
+
+    # Check
+    test <- contigs$Length == sapply(seqs, length)
+    if (!all(test)) {
+        msg <- 'Not all sequences have the same length as stated in their header. Aborting...'
+        stop(msg)
+    }
+    
+    # Write FASTA
+    msg <- 'Writing FASTA files...'
+    message(msg)
+    for (i in data$index) {
+        ind <- contigs$Sample == i
+        fn <- object$genome[index(object) == i]
+        if (length(seqs[ind]) > 0) Biostrings::writeXStringSet(seqs[ind], fn) else unlink(fn)
+    }
+
+    # Exit
+    if (debug) {
+        output <- list(
+            'filter' = filter,
+            'contigs' = contigs,
+            'seqs' = seqs
+        )
+        return(output)
+    }
+    if (return.filter) {
+        return(filter)
+    }
 }

@@ -32,9 +32,11 @@ check_installed <- function(program=NULL, silent=FALSE) {
 #' Check program version
 #' 
 #' @param program Name of the program
+#' @param command Name of the version command (default: --version)
+#' @param return.version Whether to return the version number (default FALSE will only print message)
 #'
 #' @export
-check_version <- function(program=NULL, command='--version') {
+check_version <- function(program=NULL, command='--version', return.version = FALSE) {
     
     # Minimal check
     stopifnot(
@@ -50,7 +52,7 @@ check_version <- function(program=NULL, command='--version') {
     )
 
     # Version command
-    cmd <- paste(program,command,'2>&1')
+    cmd <- paste(program,command)
     if (program %in% names(exceptions)) {
         cmd <- exceptions[[program]]
     }
@@ -58,19 +60,22 @@ check_version <- function(program=NULL, command='--version') {
 
     # Exit 2
     if (length(version) == 0) {
-        return()
+        stop('No output to version call.')
     }
     if (length(version) > 1) {
         version <- paste(version, collapse='\n')
     }
     
-    # Return
+    # Message
     if (stringr::str_detect(version, program)) {
         msg <- version
     } else {
         msg <- paste(program,version)
     }
     message(msg)
+
+    # Exit
+    if (return.version) return(version)
 }
 
 #' Check output file
@@ -132,7 +137,7 @@ is_file <- function(file_name=NULL, suffix=NULL, silent=FALSE) {
         return(FALSE)
     }
 
-    # Check suffix
+    # File suffix
     if (!is.null(suffix)) {
         index <- endsWith(file_name, suffix)
         if (!any(index)) {
