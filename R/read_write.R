@@ -179,10 +179,14 @@ read_gff3 <- function(file,
 #' Format a data.frame according to GFF3 structure.
 #' 
 #' @param x Data.frame
+#' @param replace.attributes Whether to replace the attributes column by gathering all non-standard columns
+#' @param remove.duplicates Whether to remove rows that share the same seqid, type, start, and end to a row higher in the file.
+#'
+#' @importFrom dplyr group_by mutate
 #'
 #' @export
 #'
-format_gff3 <- function(x, replace.attributes = FALSE) {
+format_gff3 <- function(x, replace.attributes = FALSE, remove.duplicates = FALSE) {
 
     # Check
     stopifnot(
@@ -234,6 +238,12 @@ format_gff3 <- function(x, replace.attributes = FALSE) {
         
     # Order data.frame
     GFF <- GFF[order(GFF$seqid, GFF$start, GFF$end, GFF$source, decreasing = c(FALSE, FALSE, TRUE, FALSE)), ]
+
+    # Remove duplicated entries
+    x <- group_by(GFF, seqid, type, start)
+    x <- mutate(x, dup = duplicated(end))
+    index <- !x$dup
+    GFF <- if (remove.duplicates) GFF[index, ] else GFF
 
     # Exit
     return(GFF)

@@ -459,20 +459,27 @@ RunPHANOTATE <- function(object,
 #' @param object A genomeCollection object
 #' @param name Name of the slot in metadata(object)
 #' @param annotations A character vector of annotations present in Annotations(object)
+#' @param remove.duplicates Whether to remove duplicated entries from the final GFF file. Order of the input GFFs will be preserved.
+#' See help(format_gff3) for more information.
 #' @param overwrite Whether to overwrite existing output files
 #'
 #' @importFrom dplyr bind_rows
+#' @importFrom stringr str_detect
+#' @importFrom Biostrings readDNAStringSet
 #'
 #' @export
 #'
-CombineAnnotations <- function(object, name, annotations, overwrite = FALSE) {
+CombineAnnotations <- function(object, name, annotations, remove.duplicates = TRUE, remove.source = NULL, overwrite = FALSE) {
 
     # Minimal check
     stopifnot(
-        is(object) == 'genomeCollection'
+        is(object) == 'genomeCollection',
+        length(remove.source) < 2
     )
     if (is.null(object[[name]])) {
-        msg <- paste('No slot', name, 'found in object. Will be added to metadata(object).')
+        msg <- paste0('No slot "', name, '" found in object. Will be added to metadata(object).')
+        object[[name]] <- paste0(object$path, name,'.gff3')
+        message(msg)
     } else
     if (name %in% names(object[[]])) {
         msg <- paste0('Column "', name, '" already exists in metadata(object).')
@@ -483,9 +490,8 @@ CombineAnnotations <- function(object, name, annotations, overwrite = FALSE) {
     }
 
     # Variables
-    object[[name]] <- paste0(object$path, name,'.gff3')
     ind.genome <- file.exists(object$genome)
-    ind.regions <- file.exists(object$regions)
+    ind.regions <- file.exists(object[[name]])
     ind.anns <- annotations %in% Annotations(object)
     missing <- if (overwrite) index(object)[ind.genome] else index(object)[ind.genome & !ind.regions]
 
@@ -520,6 +526,15 @@ CombineAnnotations <- function(object, name, annotations, overwrite = FALSE) {
             
         }
         x <- dplyr::bind_rows(x)
+
+        # Remove duplicates
+        x <- if (remove.duplicates) format_gff3(x, remove.duplicates = remove.duplicates) else x
+
+        # Remove 'source' matching pattern
+        if (length(remove.source)) {
+            ind.rm <- str_detect(x$source, remove.source)
+            x <- x[!ind.rm, ]
+        }
 
         # Set sequence attribute
         attr(x, 'sequence') <- readDNAStringSet(object$genome[[index]])
@@ -645,7 +660,7 @@ bakta <- function(input.fasta, output.dir,
 #' @export
 #'
 RunBakta <- function(object, 
-                     regions = 'regions',
+                     regions = NULL,
                      db = '../databases/bakta/',
                      recompute = FALSE,
                      recompute.sample = NULL,
@@ -662,7 +677,7 @@ RunBakta <- function(object,
     out.dir <- paste0(object$path[ind],'annotation/bakta/')
     genomes <- object$genome[ind]
     regions <- if (regions %in% names(object[[]])) object[[regions]] else NULL
-    force <- if (recompute) TRUE else FALSE
+    force <- if (recompute | length(recompute.sample)) TRUE else FALSE
 
     # Output
     data <- Annotation(object, 'Bakta')
@@ -848,7 +863,7 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
 
     ## Genes
     if (is_file(genes.gff, silent=TRUE)) {
-        cmd <- paste(cmd,'--gff',genes.gff,'--fix-prodigal')
+        cmd <- paste(cmd,'--gff',genes.gff) # ,'--fix-prodigal'
     }
 
     ## Genome
@@ -878,7 +893,7 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
 #' @param update.db Boolean, whether to update the DefenseFinder database
 #'
 #' @export
-defense_finder <- function(file=NULL, out.dir=NULL, db.path=NULL, 
+defense_finder <- function(file, out.dir, db.path, 
                            anti.defense=TRUE, anti.defense.only=FALSE,
                            threads = n_proc(), update.db=FALSE
                           ) {
