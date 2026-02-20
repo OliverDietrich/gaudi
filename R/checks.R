@@ -52,11 +52,11 @@ check_version <- function(program=NULL, command='--version', return.version = FA
     )
 
     # Version command
-    cmd <- paste(program,command)
+    cmd <- paste(program,command, '2>&1')
     if (program %in% names(exceptions)) {
         cmd <- exceptions[[program]]
     }
-    version <- system(cmd, intern=TRUE)
+    version <- system(cmd, intern = TRUE)
 
     # Exit 2
     if (length(version) == 0) {
