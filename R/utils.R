@@ -169,9 +169,16 @@ navigate_to_project_root <- function(project.name = NULL,
 #' @param command the system command to be invoked, as a character string.
 #' 
 #' @export
-system3 <- function(command, max.print=25, log.file=NULL, verbose = TRUE, include.errors = TRUE) {
+system3 <- function(command,
+                    return.stdout = FALSE,
+                    max.print=25,
+                    log.file=NULL,
+                    verbose = TRUE,
+                    include.errors = TRUE
+                   ) {
     
     # Redirect stderr
+    include.errors <- if (return.stdout) FALSE else include.errors
     command <- if (include.errors) paste(command, '2>&1') else command
 
     # Call system
@@ -189,6 +196,9 @@ system3 <- function(command, max.print=25, log.file=NULL, verbose = TRUE, includ
         message(msg)
     }
     
+    # Exit 1
+    if (return.stdout) return(stdout)
+
     # Print
     if (n.lines > max.print) {
         msg <- paste('Output is longer than', max.print, 'lines and has been cropped.')
@@ -322,13 +332,14 @@ activate_conda_env <- function(name=NULL, prefix=NULL, conda_home='~/miniconda3'
 #'
 #' @export
 #'
-peek <- function(x, n=2L) {
+peek <- function(x, n=2) {
 
     x <- as.data.frame(x)
 
+    print(dim(x))
     x <- rbind(
         head(x, n),
-        rep('...', ncol(x)),
+        #rep('...', ncol(x)),
         tail(x, n)
     )
 
