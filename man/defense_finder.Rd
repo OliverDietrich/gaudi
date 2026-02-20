@@ -5,9 +5,9 @@
 \title{DefenseFinder}
 \usage{
 defense_finder(
-  file = NULL,
-  out.dir = NULL,
-  db.path = NULL,
+  file,
+  out.dir,
+  db.path,
   anti.defense = TRUE,
   anti.defense.only = FALSE,
   threads = n_proc(),
@@ -15,12 +15,11 @@ defense_finder(
 )
 }
 \arguments{
-\item{file}{Character, path to the input file.}
+\item{file}{FASTA file containing either genome (FNA) or protein (FAA) sequences. Not sure about genes (FFN)}
 
 \item{out.dir}{Character, path to target directory.}
 
-\item{db.path}{Character, path to defense-system-model database (mentioned in
-https://github.com/mdmparis/defense-finder/issues/8).}
+\item{db.path}{Character, path to defense-system-model database (mentioned in https://github.com/mdmparis/defense-finder/issues/8).}
 
 \item{threads}{Numeric, number of threads.}
 

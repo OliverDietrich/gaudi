@@ -11,6 +11,7 @@ padloc(
   crispr.gff = NULL,
   out.dir,
   db.path,
+  fix.prodigal = FALSE,
   overwrite = FALSE,
   threads = n_proc()
 )

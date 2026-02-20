@@ -4,7 +4,14 @@
 \alias{CombineAnnotations}
 \title{Combine annotations for a genomeCollection}
 \usage{
-CombineAnnotations(object, name, annotations, overwrite = FALSE)
+CombineAnnotations(
+  object,
+  name,
+  annotations,
+  remove.duplicates = TRUE,
+  remove.source = NULL,
+  overwrite = FALSE
+)
 }
 \arguments{
 \item{object}{A genomeCollection object}
@@ -12,6 +19,9 @@ CombineAnnotations(object, name, annotations, overwrite = FALSE)
 \item{name}{Name of the slot in metadata(object)}
 
 \item{annotations}{A character vector of annotations present in Annotations(object)}
+
+\item{remove.duplicates}{Whether to remove duplicated entries from the final GFF file. Order of the input GFFs will be preserved.
+See help(format_gff3) for more information.}
 
 \item{overwrite}{Whether to overwrite existing output files}
 }

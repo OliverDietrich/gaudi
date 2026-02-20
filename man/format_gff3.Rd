@@ -4,10 +4,14 @@
 \alias{format_gff3}
 \title{Enforce GFF3 formatting}
 \usage{
-format_gff3(x, replace.attributes = FALSE)
+format_gff3(x, replace.attributes = FALSE, remove.duplicates = FALSE)
 }
 \arguments{
 \item{x}{Data.frame}
+
+\item{replace.attributes}{Whether to replace the attributes column by gathering all non-standard columns}
+
+\item{remove.duplicates}{Whether to remove rows that share the same seqid, type, start, and end to a row higher in the file.}
 }
 \description{
 Format a data.frame according to GFF3 structure.
