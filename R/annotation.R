@@ -7,8 +7,14 @@
 #' @param db Character, path to database
 #' @param force Boolean, whether to overwrite output.dir
 #'
+#' @importFrom readr read_tsv
+#' @importFrom Biostrings readDNAStringSet
+#'
 #' @export
-geNomad <- function(input.fasta, output.dir, db, force=FALSE) {
+geNomad <- function(input.fasta, output.dir, db,
+                    force=FALSE,
+                    threads = n_proc()
+                   ) {
 
     # Minimal check
     stopifnot(
@@ -19,12 +25,14 @@ geNomad <- function(input.fasta, output.dir, db, force=FALSE) {
     check_version('genomad')
 
     # Input
-    output.dir <- if(endsWith(output.dir,'/')) output.dir else paste0(output.dir,'/')
+    output.dir <- if(endsWith(output.dir,'/')) output.dir else paste0(output.dir,'/');
+    prefix <- if (endsWith(input.fasta, '.fna')) str_remove(basename(input.fasta), '.fna$') else NULL;
+    prefix <- if (endsWith(input.fasta, '.fasta')) str_remove(basename(input.fasta), '.fasta$') else prefix;
 
     # Variables
     log.file <- paste0(output.dir,'runtime.log')
-    classification.tsv <- paste0(output.dir,'genome_aggregated_classification/genome_aggregated_classification.tsv')
-    prophage.tsv <- paste0(output.dir,'genome_find_proviruses/genome_provirus.tsv')
+    classification.tsv <- paste0(output.dir, prefix, '_aggregated_classification/', prefix, '_aggregated_classification.tsv')
+    prophage.tsv <- paste0(output.dir, prefix, '_find_proviruses/', prefix, '_provirus.tsv')
     out.gff <- paste0(output.dir,'regions.gff')
 
     # Output
@@ -54,14 +62,14 @@ geNomad <- function(input.fasta, output.dir, db, force=FALSE) {
     t.start <- Sys.time()
 
     # Main
-    cmd <- paste('genomad end-to-end',input.fasta,output.dir,db)
+    cmd <- paste('genomad end-to-end','--threads',threads,input.fasta,output.dir,db)
     if (!file.exists(classification.tsv)) {
         system3(cmd, log.file = log.file)
     }
 
     # Read output files
-    class <- readr::read_tsv(classification.tsv, show_col_types = FALSE)
-    proph <- readr::read_tsv(prophage.tsv, show_col_types = FALSE)
+    class <- readr::read_tsv(classification.tsv, show_col_types = FALSE) # TODO: add colum names to variables
+    proph <- readr::read_tsv(prophage.tsv, show_col_types = FALSE) # TODO: add colum names to variables
     seqs <- Biostrings::readDNAStringSet(input.fasta)
 
     # Checkpoint
@@ -87,7 +95,7 @@ geNomad <- function(input.fasta, output.dir, db, force=FALSE) {
     gff$source <- 'geNomad'
     gff$type <- 'region'
     gff$start <- 1
-    gff$end <- width(seqs)
+    gff$end <- Biostrings::width(seqs)
     gff$strand <- '+'
     gff$phase <- '.'
     gff <- format_gff3(gff)
@@ -140,7 +148,9 @@ geNomad <- function(input.fasta, output.dir, db, force=FALSE) {
 RunGenomad <- function(object, 
                        recompute = FALSE,
                        recompute.sample = NULL,
-                       debug = FALSE, debug.n = 1
+                       debug = FALSE, 
+                       debug.n = 1,
+                       ...
                       ) {
 
     # Minimal check
@@ -182,7 +192,7 @@ RunGenomad <- function(object,
     for (sample in missing) {
         i <- which(data$index == sample)
         dir.create(out.dir[[i]], recursive = TRUE)
-        geNomad(input.fasta = genomes[[i]], output.dir = out.dir[[i]], db = '../databases/genomad_db/', force = TRUE)
+        geNomad(input.fasta = genomes[[i]], output.dir = out.dir[[i]], db = '../databases/genomad_db/', force = TRUE, ...)
     }
 
     # Assign object
@@ -211,7 +221,8 @@ RunGenomad <- function(object,
 prodigal <- function(genome, output.dir, output.format = 'gff',
                      procedure = 'single',
                      translation.table = 'auto',
-                     write.protein.translations = TRUE, 
+                     training.file = NULL,
+                     write.protein.translations = TRUE,
                      closed.ends = FALSE,
                      write.cds = TRUE,
                      mask.N = TRUE,
@@ -226,7 +237,11 @@ prodigal <- function(genome, output.dir, output.format = 'gff',
         length(output.dir) == 1
     )
     check_installed('prodigal', silent=TRUE)
-    check_version('prodigal', command = '-v')
+    check_version('prodigal', command = '-v 2>&1')
+    if (!is.null(training.file)) {
+        if (!file.exists(training.file)) message(paste('Training file will be written to', training.file))
+        if (file.exists(training.file)) message(paste('Using training data from', training.file, 'to predict genes!'))
+    }
 
     # Variables
     if (!endsWith(output.dir,'/')) {
@@ -235,6 +250,7 @@ prodigal <- function(genome, output.dir, output.format = 'gff',
     out.file <- paste0(output.dir,'genes','.',output.format)
     out.proteins <- paste0(output.dir,'proteins.faa')
     out.cds <- paste0(output.dir,'cds.fna')
+    out.train <- paste0(output.dir,'model.trn')
     out.log <- paste0(output.dir,'runtime.log')
     out.potential <- paste0(output.dir,'potential-genes.gff')
 
@@ -251,12 +267,13 @@ prodigal <- function(genome, output.dir, output.format = 'gff',
 
     # Main
     cmd <- paste('prodigal','-i',genome,'-f',output.format,'-o',out.file,'-p',procedure)
-    cmd <- if (translation.table %in% 1:25) paste(cmd,'-g',translation.table) else cmd
-    cmd <- if(write.protein.translations) paste(cmd,'-a',out.proteins) else cmd
-    cmd <- if(closed.ends) paste(cmd,'-c') else cmd
-    cmd <- if(write.cds) paste(cmd,'-d',out.cds) else cmd
-    cmd <- if(mask.N) paste(cmd,'-m') else cmd
-    cmd <- if(write.potential.genes) paste(cmd,'-s',out.potential) else cmd
+    cmd <- if (translation.table %in% 1:25) paste(cmd,'-g',translation.table) else cmd;
+    cmd <- if(write.protein.translations) paste(cmd,'-a',out.proteins) else cmd;
+    cmd <- if(!is.null(training.file)) paste(cmd,'-t',training.file) else cmd;
+    cmd <- if(closed.ends) paste(cmd,'-c') else cmd;
+    cmd <- if(write.cds) paste(cmd,'-d',out.cds) else cmd;
+    cmd <- if(mask.N) paste(cmd,'-m') else cmd;
+    cmd <- if(write.potential.genes) paste(cmd,'-s',out.potential) else cmd;
     system3(cmd, log.file = out.log)
 
     # Timestamp
@@ -275,7 +292,8 @@ prodigal <- function(genome, output.dir, output.format = 'gff',
 #'
 RunProdigal <- function(object, 
                         recompute = FALSE,
-                        debug = FALSE, debug.n = 1
+                        debug = FALSE, debug.n = 1,
+                        ...
                        ) {
 
     # Minimal check
@@ -314,7 +332,7 @@ RunProdigal <- function(object,
     # Main
     for (sample in missing) {
         i <- which(data$index == sample)
-        prodigal(genome = genomes[[i]], output.dir = out.dir[[i]], recompute = TRUE)
+        prodigal(genome = genomes[[i]], output.dir = out.dir[[i]], recompute = TRUE, ...)
     }
 
     # Assign object
@@ -399,9 +417,12 @@ phanotate <- function(in.file, out.dir,
 #' @export
 #'
 RunPHANOTATE <- function(object, 
-                        recompute = FALSE,
-                        recompute.sample = NULL,
-                        debug = FALSE, debug.n = 1
+                         recompute = FALSE,
+                         recompute.sample = NULL,
+                         samples.skip = NULL,
+                         debug = FALSE, 
+                         debug.n = 1,
+                         ...
                         ) {
 
     # Minimal check
@@ -432,8 +453,9 @@ RunPHANOTATE <- function(object,
     # Input
     ind <- file.exists(data$genes)
     missing <- data$index[!ind]
-    missing <- if (recompute) data$index else missing
-    missing <- if (debug) head(missing, debug.n) else missing
+    missing <- if (recompute) data$index else missing;
+    missing <- missing[which(!missing %in% samples.skip)]
+    missing <- if (debug) head(missing, debug.n) else missing;
     ind.rc <- recompute.sample %in% data$index
     missing <- if (any(ind.rc)) recompute.sample[ind.rc] else missing
     msg <- paste('Found genes for',sum(ind),'out of',length(data$index),'genomes.','Running PHANOTATE for',length(missing),'...')
@@ -442,107 +464,12 @@ RunPHANOTATE <- function(object,
     # Main
     for (sample in missing) {
         i <- which(data$index == sample)
-        phanotate(in.file = genomes[[i]], out.dir = out.dir[[i]], recompute = TRUE)
+        phanotate(in.file = genomes[[i]], out.dir = out.dir[[i]], recompute = TRUE, ...)
     }
     
     # Assign object
     Annotation(object, 'PHANOTATE') <- data
     
-    # Exit
-    return(object)
-}
-
-#' Combine annotations for a genomeCollection
-#'
-#' Combine the genes from multiple Annotation objects in a genomeCollection.
-#' 
-#' @param object A genomeCollection object
-#' @param name Name of the slot in metadata(object)
-#' @param annotations A character vector of annotations present in Annotations(object)
-#' @param remove.duplicates Whether to remove duplicated entries from the final GFF file. Order of the input GFFs will be preserved.
-#' See help(format_gff3) for more information.
-#' @param overwrite Whether to overwrite existing output files
-#'
-#' @importFrom dplyr bind_rows
-#' @importFrom stringr str_detect
-#' @importFrom Biostrings readDNAStringSet
-#'
-#' @export
-#'
-CombineAnnotations <- function(object, name, annotations, remove.duplicates = TRUE, remove.source = NULL, overwrite = FALSE) {
-
-    # Minimal check
-    stopifnot(
-        is(object) == 'genomeCollection',
-        length(remove.source) < 2
-    )
-    if (is.null(object[[name]])) {
-        msg <- paste0('No slot "', name, '" found in object. Will be added to metadata(object).')
-        object[[name]] <- paste0(object$path, name,'.gff3')
-        message(msg)
-    } else
-    if (name %in% names(object[[]])) {
-        msg <- paste0('Column "', name, '" already exists in metadata(object).')
-        message(msg)
-    } else {
-        msg <- paste0('Slot "', name, '" already exists in object. Aborting...')
-        stop(msg)
-    }
-
-    # Variables
-    ind.genome <- file.exists(object$genome)
-    ind.regions <- file.exists(object[[name]])
-    ind.anns <- annotations %in% Annotations(object)
-    missing <- if (overwrite) index(object)[ind.genome] else index(object)[ind.genome & !ind.regions]
-
-    # Input
-    if (length(ind)) {
-        msg <- paste('Found', sum(ind.anns), 'out of', length(ind.anns), 'Annotation objects:', paste(annotations[ind.anns], collapse=', '))
-        message(msg)
-    } else {
-        msg <- paste('Did not found any Annotation objects in genomeCollection. Please check what has been computed!')
-        stop(msg)
-    }
-    
-    # Output
-    msg <- paste('Found', sum(ind.regions), 'out of', sum(ind.genome), 'output files. Combining annotations for', length(missing), 'genomes.')
-    message(msg)
-
-    # Main
-    for (sample in missing) {
-        index <- which(index(object) == sample)
-        
-        # Get GFF path
-        x <- list()
-        for (i in annotations) {
-            data <- object[[i]]
-            ind <- data$index == sample
-            x[[i]] <- object[[i]]$genes[ind]   
-        }
-
-        # Read GFF
-        for (i in names(x)) {
-            x[[i]] <- suppressMessages(read_gff3(x[[i]], extract.attributes = FALSE))
-            
-        }
-        x <- dplyr::bind_rows(x)
-
-        # Remove duplicates
-        x <- if (remove.duplicates) format_gff3(x, remove.duplicates = remove.duplicates) else x
-
-        # Remove 'source' matching pattern
-        if (length(remove.source)) {
-            ind.rm <- str_detect(x$source, remove.source)
-            x <- x[!ind.rm, ]
-        }
-
-        # Set sequence attribute
-        attr(x, 'sequence') <- readDNAStringSet(object$genome[[index]])
-
-        # Write GFF
-        write_gff3(x, object[[name]][[index]])
-    }
-
     # Exit
     return(object)
 }
@@ -575,19 +502,17 @@ bakta <- function(input.fasta, output.dir,
 
     # Minimal check
     stopifnot(
-        is_file(input.fasta, suffix=c('.fasta','.fna')),
-        dir.exists(db)
+        is_file(input.fasta, suffix=c('.fasta','.fna'))
     )
     check_installed('bakta', silent=TRUE)
     check_version('bakta')
 
     # Variables
-    db <- if (endsWith(db,'/')) db else paste0(db,'/')
+    db <- if (endsWith(db,'/')) db else paste0(db,'/');
     output.dir <- if (endsWith(output.dir,'/')) output.dir else paste0(output.dir,'/')
     download.log <- paste0(db,'download.log')
     bakta.db <- paste0(db,'db/')
     bakta.db.version <- paste0(bakta.db,'/version.json')
-    int.regions <- paste0(output.dir,'regions.gff')
     out.gff <- paste0(output.dir,prefix,'.gff3')
     log.file <- paste0(output.dir,'runtime.log')
 
@@ -617,35 +542,12 @@ bakta <- function(input.fasta, output.dir,
         msg <- paste('Bakta database',db,'does not exists.','Consider passing download.db=TRUE.')
         stop(msg)
     }
-
-    # Check log for errors
-    if (file.exists(log.file)) {
-        log <- readLines(log.file)
-        error_regions <- 'ERROR: User-provided regions/features file GFF3 format not valid'
-        regions <- if (any(stringr::str_detect(x, error_regions))) NULL else regions
-    }
-
-    # Format regions
-    if (is_file(regions)) {
-        # Read
-        gff <- read_gff3(regions)
-
-        # Remove ANY regions identical to those called by Prodigal
-        gff$remove <- stringr::str_detect(gff$source, 'Prodigal')
-        gff <- dplyr::group_by(gff, seqid, start, end) %>% dplyr::mutate(remove = any(remove))
-        index <- !gff$remove
-        gff$remove <- NULL
-        gff <- gff[index, ]
-
-        # Write
-        write_gff3(gff, int.regions)
-    }
     
     # Run Bakta
     cmd <- paste('bakta','--db',bakta.db,'--verbose','--force','--output',output.dir,'--threads',threads)
-    cmd <- if (length(prefix)) paste(cmd,'-p',prefix) else cmd 
-    cmd <- if (length(regions)) paste(cmd,'--regions',int.regions) else cmd 
-    cmd <- if (keep.contig.headers) paste(cmd,'--keep-contig-headers') else cmd
+    cmd <- if (length(prefix)) paste(cmd,'-p',prefix) else cmd;
+    cmd <- if (is_file(regions)) paste(cmd,'--regions',regions) else cmd;
+    cmd <- if (keep.contig.headers) paste(cmd,'--keep-contig-headers') else cmd;
     cmd <- paste(cmd,input.fasta)
     stdout <- system3(cmd, log.file=log.file)
 }
@@ -664,7 +566,8 @@ RunBakta <- function(object,
                      db = '../databases/bakta/',
                      recompute = FALSE,
                      recompute.sample = NULL,
-                     debug = FALSE, debug.n = 1
+                     debug = FALSE, debug.n = 1,
+                     ...
                     ) {
 
     # Minimal check
@@ -676,7 +579,7 @@ RunBakta <- function(object,
     ind <- file.exists(object$genome)
     out.dir <- paste0(object$path[ind],'annotation/bakta/')
     genomes <- object$genome[ind]
-    regions <- if (regions %in% names(object[[]])) object[[regions]] else NULL
+    regions <- if (regions %in% names(object[[]])) object[[regions]][ind] else NULL
     force <- if (recompute | length(recompute.sample)) TRUE else FALSE
 
     # Output
@@ -714,7 +617,8 @@ RunBakta <- function(object,
               output.dir = out.dir[[i]],
               prefix = sample,
               db = db,
-              force = force
+              force = force,
+              ...
              )
     }
     
@@ -724,50 +628,6 @@ RunBakta <- function(object,
     # Exit
     return(object)
 }
-
-
-#' PhANNs
-#'
-#' Annotate phage structural proteins
-#'
-#' @param genome.fasta Path to genome FASTA
-#'
-#' @export
-PhANNs <- function(genome.fasta=NULL, output.dir=NULL, 
-                            conda.env='../envs/phanns',
-                            repo.dir='../PhANNs',
-                            repo.url='https://github.com/Adrian-Cantu/PhANNs.git',
-                            model.url='https://edwards.sdsu.edu/phanns/download/model.tar'
-                           ) {
-
-    # Minimal check
-    stopifnot(
-        is_file(genome.fasta),
-        !is.null(output.dir)
-    )
-
-    # Check program
-
-    return(NULL)
-}
-
-#' Pharokka
-#'
-#' CLI wrapper for phage genome annotation using Pharokka.
-#'
-#' @param genome.fasta Path to genome FASTA
-#'
-#' @export
-pharokka <- function(genome.fasta=NULL) {
-
-    # Minimal check
-    stopifnot(
-        is_file(genome.fasta)
-    )
-
-    return(NULL)
-}
-
 
 #' PADLOC: Prokaryotic Antiviral Defence LOCator
 #' 
@@ -787,6 +647,7 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
                    crispr.gff=NULL, 
                    out.dir, 
                    db.path,
+                   fix.prodigal = FALSE,
                    overwrite=FALSE,
                    threads=n_proc()
                   ) {
@@ -794,17 +655,35 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
     # Minimal check
     check_installed('padloc', silent=TRUE)
 
+    # Input
+    main_file <- c(protein.faa, genome.fna)
+    if (length(main_file) != 1) stop('There must be either a protein.faa or genome.fna present. Aborting...')
+    main_file <- basename(main_file)
+    ptrn <- '.f[:alpha:]a'
+    if (str_ends(main_file, ptrn)) {
+        prefix <- str_remove(main_file, ptrn)
+    } else {
+        stop('File suffix not recognized. Please supply valid protein.faa or genome.fna!')
+    }
+    
     # Variables
     out.dir <- if (endsWith(out.dir,'/')) out.dir else paste0(out.dir,'/')
     log.file <- paste0(out.dir,'runtime.log')
+    clean.gff <- paste0(out.dir,prefix,'_input.gff3')
+    out.file <- paste0(out.dir,prefix,'_padloc.gff')
+    out.csv <- paste0(out.dir,prefix,'_padloc.csv')
     all_files <- list.files(out.dir)
+
+    # GFF input formatting
+    if (!is.null(genes.gff)) {
+        gff <- read_gff3(genes.gff, keep.sequences = FALSE)
+    }
 
     # Output
     if (overwrite) unlink(out.dir, recursive = TRUE)
-    index <- str_detect(all_files, 'padloc.csv')
+    index <- file.exists(out.file)
     if (any(index)) {
-        output_file <- paste0(out.dir,all_files[index])
-        msg <- paste('Output',output_file,'already exists. Aborting...')
+        msg <- paste('Output',out.file,'already exists. Aborting...')
         message(msg)
         return()
     }
@@ -863,7 +742,8 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
 
     ## Genes
     if (is_file(genes.gff, silent=TRUE)) {
-        cmd <- paste(cmd,'--gff',genes.gff) # ,'--fix-prodigal'
+        cmd <- paste(cmd,'--gff',genes.gff)
+        cmd <- if (fix.prodigal) paste(cmd, '--fix-prodigal') else cmd
     }
 
     ## Genome
@@ -879,44 +759,175 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
     # Main
     cmd <- paste(cmd,'--cpu',threads,'--data',db.path,'--force')
     system3(cmd, log.file = log.file)
+
+    # Create empty files if nothing found
+    log <- readLines(log.file)
+    if (any(str_detect(log, 'Nothing found for'))) {
+        warning('No defense systems found. Creating empty GFF!')
+        writeLines('##gff-version 3', out.file)
+    }
+
+    # Exit 1
+    if (!file.exists(out.file)) {
+        msg <- paste('Output file', out.file, 'does not exist.')
+        warning(msg)
+        return()
+    }
+
+    # Exit 2
+    if (!file.exists(out.csv)) {
+        msg <- paste('Output file', out.csv, 'does not exist.')
+        warning(msg)
+        return()
+    }
+
+    # Format GFF
+    systems <- readr::read_csv(out.csv)
+    result <- read_gff3(out.file)
+    result$source <- 'Padloc'
+    result$type <- 'Padloc'
+    result$gene_name <- systems$target.description
+    result$defense_gene <- systems$protein.name
+    result$defense_type <- systems$system # Match annotation to DefenseFinder !
+    result$defense_activity <- 'Defense' # Not implemented in Padloc, yet!
+    write_gff3(result, out.file, replace.attributes = TRUE)
+}
+
+#' Run Padloc for a genomeCollection
+#'
+#' @param object A genomeCollection object
+#' @param slot A genomeObject slot storing genomes (FNA) OR gene (GFF) and protein (FAA) files
+#' @param recompute Whether to re-run Padloc even though an output GFF exists
+#' @param debug Whether to run in debug mode (run only for debug.n samples)
+#' @param debug.n Number of samples to run while debugging
+#'
+#' @export
+#'
+RunPadloc <- function(object, slot = 'Bakta',
+                     db = '../databases/padloc',
+                     recompute = FALSE,
+                     recompute.sample = NULL,
+                     debug = FALSE, debug.n = 1
+                    ) {
+
+    # Minimal check
+    stopifnot(
+        is(object) == 'genomeCollection',
+        slot %in% Annotations(object)
+    )
+
+    # Variables
+    ind <- file.exists(object$genome)
+    out.dir <- paste0(object$path[ind],'annotation/padloc/')
+    genomes <- object$genome[ind]
+    force <- if (recompute | length(recompute.sample)) TRUE else FALSE
+
+    # Output
+    data <- Annotation(object, 'Padloc')
+    if (is.null(data)) {
+        prefix <- index(object)[ind]
+        data <- methods::new("Annotation", 
+                             index = index(object)[ind],
+                             genes = paste0(out.dir,prefix,'_padloc.gff'),
+                             cds = character(),
+                             proteins = character(),
+                             log = paste0(out.dir,'runtime.log'),
+                             genome = 'genome',
+                             tool = 'Padloc',
+                             type = "default"
+                            )
+    }
+
+    # Input
+    ind <- file.exists(data$genes)
+    missing <- data$index[!ind]
+    missing <- if (recompute) data$index else missing;
+    missing <- if (debug) head(missing, debug.n) else missing;
+    ind.rc <- recompute.sample %in% data$index
+    missing <- if (any(ind.rc)) recompute.sample[ind.rc] else missing;
+    msg <- paste('Found genes for',sum(ind),'out of',length(data$index),'genomes.','Running Padloc for',length(missing),'...')
+    message(msg)
+    
+    # Main
+    for (sample in missing) {
+        print(sample)
+        i <- which(data$index == sample)
+
+        # Run Padloc
+        padloc(out.dir = out.dir[[i]], 
+               db.path = db, 
+               genes.gff = object[[slot]]$genes[[i]],
+               protein.faa = object[[slot]]$proteins[[i]],
+               overwrite = force
+              )
+    }
+    
+    # Assign object
+    Annotation(object, 'Padloc') <- data
+    
+    # Exit
+    return(object)
 }
 
 #' DefenseFinder
 #'
 #' CLI wrapper for defense gene annotation using DefenseFinder
 #'
-#' @param file Character, path to the input file.
-#' @param out.dir Character, path to target directory.
-#' @param db.path Character, path to defense-system-model database (mentioned in
-#' https://github.com/mdmparis/defense-finder/issues/8).
+#' @param file FASTA file containing either genome (FNA) or protein (FAA) sequences. Not sure about genes (FFN)
+#' @param out.dir Path to target directory.
+#' @param db.path Path to defense-system-model database (mentioned in https://github.com/mdmparis/defense-finder/issues/8).
+#' @param annotation GFF3 file containing annotations matching the proteins (MUST BE TESTED for genome.fna). Used for output formatting.
+#' @param anti.defense Whether to also search for anti-defense genes
+#' @param anti.defense only Whether to only search for anti-defense genes
+#' @param preserve.raw Whether to preserve intermediate/raw data files (HMMsearch, etc.)
 #' @param threads Numeric, number of threads.
 #' @param update.db Boolean, whether to update the DefenseFinder database
 #'
 #' @export
+#'
 defense_finder <- function(file, out.dir, db.path, 
-                           anti.defense=TRUE, anti.defense.only=FALSE,
-                           threads = n_proc(), update.db=FALSE
+                           annotation = NULL,
+                           anti.defense=TRUE, 
+                           anti.defense.only=FALSE,
+                           preserve.raw = FALSE,
+                           threads = n_proc(), 
+                           update.db=FALSE,
+                           overwrite = FALSE
                           ) {
 
     # Minimal check
     stopifnot(
         is_file(file),
-        !is.null(out.dir),
-        !is.null(db.path),
         length(out.dir) == 1,
         length(file) == 1 # Might be changed later ...
     )
     check_installed('defense-finder', silent=TRUE)
-    check_version('defense-finder')    
+    check_version('defense-finder')
+
+    # Prefix
+    main_file <- basename(file)
+    ptrn <- '.f[:alpha:]a'
+    if (str_ends(main_file, ptrn)) {
+        prefix <- str_remove(main_file, ptrn)
+    } else {
+        stop('File suffix not recognized. Please supply valid protein.faa or genome.fna!')
+    }
+
+    # Variables
+    out.dir <- if (endsWith(out.dir,'/')) out.dir else paste0(out.dir,'/')
+    log.file <- paste0(out.dir,'runtime.log')
+    all_files <- list.files(out.dir)
+    out.genes <- paste0(out.dir,prefix,'_defense_finder_genes.tsv')
+    out.systems <- paste0(out.dir,prefix,'_defense_finder_systems.tsv')
+    out.final <- paste0(out.dir,prefix,'_defense_finder_genes.gff3')
     
     # Status message
     message(paste('File:',file))
 
     # Check output 
-    out_files <- list.files(out.dir)
-    output_present <- str_detect(out_files, 'systems.tsv')
-    if (any(output_present)) {
-        msg <- paste('Output file',out_files[output_present],'already exists. Aborting...')
+    if (overwrite) unlink(out.dir, recursive = TRUE)
+    if (file.exists(out.systems)) {
+        msg <- paste('Output file',out.systems,'already exists. Aborting...')
         warning(msg)
         return()
     }
@@ -952,15 +963,136 @@ defense_finder <- function(file, out.dir, db.path,
     } else {
         anti_defense <- NULL
     }
+
+    # Flags
+    keep.raw <- if (preserve.raw) '--preserve-raw' else NULL
     
     # Run DefenseFinder
-    cmd <- paste('defense-finder run',file,anti_defense,'--out-dir',out.dir,'--models-dir',db.path,'--workers',threads,'2>&1')
-    cat(cmd,'\n\n')
-    stdout <- system(cmd, intern=TRUE)
-    stdout <- paste(stdout, collapse='\n')
-    cat(stdout)
+    cmd <- paste('defense-finder run',file,anti_defense,'--out-dir',out.dir,'--models-dir',db.path,keep.raw,'--workers',threads,'2>&1')
+    system3(cmd, log.file = log.file)
+
+    # Check
+    msg <- paste('Output file',out.systems,'not found. Something went wrong...')
+    if (!file.exists(out.systems)) stop(msg)
+
+    # Read output
+    systems <- readr::read_tsv(out.systems)
+    genes <- readr::read_tsv(out.genes)
+    systems <- merge(genes, systems)
+    oldgff <- if (is_file(annotation)) read_gff3(annotation) else NULL;
+
+    # Exit 1
+    if (!file.exists(annotation)) return()
+
+    # Exit 2
+    if (nrow(systems) < 1) {
+        file.create(out.final)
+        return()
+    }
+
+    # Format GFF
+    ind <- match(systems$hit_id, oldgff$ID)
+    
+    # Susbet old annotations
+    result <- oldgff[ind, ]
+    result$source <- 'DefenseFinder'
+
+    # Remove NA columns
+    ind <- colSums(is.na(result)) != nrow(result)
+    result <- result[, ind]
+
+    # Merge
+    result$type <- 'DefenseFinder'
+    result$gene_name <- result$Name
+    result$defense_gene <- systems$gene_name
+    result$Name <- systems$gene_name
+    # result$type <- systems$activity !!! CONSIDER CHANGING THE TYPE, so the track will be marked in Geneious...
+    result$defense_type <- systems$type
+    result$defense_subtype <- systems$subtype
+    result$defense_activity <- systems$activity
+    result$defense_gene_count <- systems$genes_count # Potential to increase counter ...
+
+    # Write
+    write_gff3(result, out.final, replace.attributes = TRUE)
 }
 
+#' Run DefenseFinder for a genomeCollection
+#'
+#' @param object A genomeCollection object
+#' @param slot A genomeObject slot storing genomes (FNA) OR gene (GFF) and protein (FAA) files
+#' @param recompute Whether to re-run DefenseFinder even though an output GFF exists
+#' @param debug Whether to run in debug mode (run only for debug.n samples)
+#' @param debug.n Number of samples to run while debugging
+#'
+#' @export
+#'
+RunDefenseFinder <- function(object, slot = 'Bakta',
+                             db = '../databases/defensefinder',
+                             recompute = FALSE,
+                             recompute.sample = NULL,
+                             debug = FALSE, 
+                             debug.n = 1,
+                             ...
+                            ) {
+
+    # Minimal check
+    stopifnot(
+        is(object) == 'genomeCollection',
+        slot %in% Annotations(object)
+    )
+
+    # Variables
+    ind <- file.exists(object$genome)
+    out.dir <- paste0(object$path[ind],'annotation/defensefinder/')
+    genomes <- object$genome[ind]
+
+    # Output
+    data <- Annotation(object, 'DefenseFinder')
+    if (is.null(data)) {
+        prefix <- index(object)[ind]
+        data <- methods::new("Annotation", 
+                             index = index(object)[ind],
+                             genes = paste0(out.dir,prefix,'_defense_finder_genes.gff3'),
+                             cds = character(),
+                             proteins = character(),
+                             log = paste0(out.dir,'runtime.log'),
+                             genome = 'genome',
+                             tool = 'DefenseFinder',
+                             type = "default"
+                            )
+    }
+
+    # Input
+    ind <- file.exists(data$genes)
+    missing <- data$index[!ind]
+    missing <- if (recompute) data$index else missing
+    missing <- if (debug) head(missing, debug.n) else missing
+    ind.rc <- recompute.sample %in% data$index
+    missing <- if (any(ind.rc)) recompute.sample[ind.rc] else missing
+    msg <- paste('Found genes for',sum(ind),'out of',length(data$index),'genomes.','Running DefenseFinder for',length(missing),'...')
+    message(msg)
+    
+    # Main
+    for (sample in missing) {
+        print(sample)
+        i <- which(data$index == sample)
+        defense_finder(
+            file = object[[slot]]$proteins[[i]],
+            out.dir = out.dir[[i]], 
+            db.path = db, 
+            annotation = object[[slot]]$genes[[i]],
+            overwrite = TRUE,
+            ...
+        )
+    }
+    
+    # Assign object
+    Annotation(object, 'DefenseFinder') <- data
+    
+    # Exit
+    return(object)
+}
+    
 #' ECTyper
 #'
 #' ...
@@ -998,4 +1130,134 @@ phage_rbp_detect <- function(genome=NULL) {
 
     # ...
     return(NULL)
+}
+
+#' Combine annotations for a genomeCollection
+#'
+#' Combine the genes from multiple Annotation objects in a genomeCollection.
+#' 
+#' @param object A genomeCollection object
+#' @param name Name of the slot in metadata(object)
+#' @param annotations A character vector of annotations present in Annotations(object)
+#' @param db.amrfinder Path to AMRfinder database, linking HMM model names to AMR types (see https://www.ncbi.nlm.nih.gov/pathogens/hmm/#).
+#' @param remove.duplicates Whether to remove duplicated entries from the final GFF file. Order of the input GFFs will be preserved.
+#' See help(format_gff3) for more information.
+#' @param remove.source I came back to this after some time and have no idea what I intended (and no description). UPDATE !!!
+#' @param overwrite Whether to overwrite existing output files
+#'
+#' @importFrom dplyr bind_rows
+#' @importFrom stringr str_detect
+#' @importFrom Biostrings readDNAStringSet
+#'
+#' @export
+#'
+CombineAnnotations <- function(object, name, annotations,
+                               db.amrfinder = NULL,
+                               db.phrogs = NULL,
+                               remove.duplicates = FALSE, 
+                               remove.source = NULL, 
+                               overwrite = FALSE,
+                               debug.sample = NULL
+                              ) {
+
+    # Minimal check
+    stopifnot(
+        is(object) == 'genomeCollection',
+        length(remove.source) < 2
+    )
+    if (is.null(object[[name]])) {
+        msg <- paste0('No slot "', name, '" found in object. Will be added to metadata(object).')
+        object[[name]] <- paste0(object$path, name,'.gff3')
+        message(msg)
+    } else
+    if (name %in% names(object[[]])) {
+        msg <- paste0('Column "', name, '" already exists in metadata(object).')
+        message(msg)
+    } else {
+        msg <- paste0('Slot "', name, '" already exists in object. Aborting...')
+        stop(msg)
+    }
+
+    # Variables
+    ind.genome <- file.exists(object$genome)
+    ind.regions <- file.exists(object[[name]])
+    ind.anns <- annotations %in% Annotations(object)
+    missing <- if (overwrite) index(object)[ind.genome] else index(object)[ind.genome & !ind.regions];
+    if (!is.null(debug.sample)) {
+        missing <- if (debug.sample %in% index(object)) debug.sample else '';
+    }
+
+    # Input
+    if (length(ind.anns)) {
+        msg <- paste('Found', sum(ind.anns), 'out of', length(ind.anns), 'Annotation objects:', paste(annotations[ind.anns], collapse=', '))
+        message(msg)
+    } else {
+        msg <- paste('Did not find any Annotation objects in genomeCollection. Please check what has been computed!')
+        stop(msg)
+    }
+    
+    # Output
+    msg <- paste('Found', sum(ind.regions), 'out of', sum(ind.genome), 'output files. Combining annotations for', length(missing), 'genomes.')
+    message(msg)
+
+    # Main
+    for (sample in missing) {
+        index <- which(index(object) == sample)
+        print(sample)
+        
+        # Get GFF path
+        x <- list()
+        for (i in annotations) {
+            data <- object[[i]]
+            ind <- data$index == sample
+            x[[i]] <-  object[[i]]$genes[ind]
+        }
+
+        # Read GFF
+        for (i in names(x)) {
+            if (!file.exists(x[[i]])) {
+                x[[i]] <- NULL
+                next
+            }
+            x[[i]] <- suppressMessages(read_gff3(x[[i]], extract.attributes = FALSE))
+        }
+        x <- dplyr::bind_rows(x) # , .id = 'Tool'
+
+        # Combine GFF files (across tools)
+        all <- extract_gff3_attributes(x)
+
+        # Database lookup
+        if (is_file(db.amrfinder, silent = TRUE)) {
+            db <- readr::read_tsv(db.amrfinder)
+            names(db) <- c('Accession','Link','Symbol','Name','Lenght','TC1','TC2','Scope','AMR_Type','AMR_Subtype','AMR_Class','AMR_Subclass')
+            add <- merge(all, db, by = 'Name')
+            if (nrow(add) > 1) {
+                add$gene_name <- add$Name
+                add$Name <- paste0(add$AMR_Class, '__', add$Symbol)
+                add$type <- 'AMRfinder'
+                add <- add[, !sapply(lapply(add, is.na), all)] # Remove NA columns
+                add <- format_gff3(add, replace.attributes = TRUE)
+                x <- dplyr::bind_rows(x, add)
+            }
+        }
+        if (is_file(db.phrogs, silent = TRUE)) {}
+
+        # Remove duplicates)
+        x <- if (remove.duplicates) format_gff3(x, remove.duplicates = TRUE) else x;
+
+        # Remove 'source' matching pattern
+        if (length(remove.source)) {
+            ind.rm <- str_detect(x$source, remove.source)
+            x <- x[!ind.rm, ]
+        }
+
+        # Set sequence attribute
+        attr(x, 'sequence') <- Biostrings::readDNAStringSet(object$genome[[index]])
+
+        # Write GFF
+        write_gff3(x, object[[name]][[index]])
+    }
+
+    # Exit
+    return(object)
 }
