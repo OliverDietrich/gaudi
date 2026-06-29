@@ -71,7 +71,11 @@ ReadsCounts <- function(object, name,
     }
 
     # Check output
-    df <- data$counts
+    if (recompute) {
+        Counts(data) <- data.frame()
+        unlink(csv)
+    }
+    df <- Counts(data)
     if (length(data$counts)) {
         msg <- paste('Retrieved slot "counts" from Reads(object,"', name, '").')
         message(msg)
@@ -101,12 +105,12 @@ ReadsCounts <- function(object, name,
     time_start <- Sys.time()
 
     # Index missing samples
-    done <- if (recompute) character() else df$name
+    done <- df$name
     allfiles <- character()
     for (i in c('R1', 'R2', 'S', 'L')) {
         somefiles <- slot(data, i)
         if (!length(slot(data, i))) next
-        names(somefiles) <- paste(slot(data, id), i, sep='_')
+        names(somefiles) <- paste(slot(data, id), i, sep='_type_')
         allfiles <- c(allfiles, somefiles)
     }
     allfiles <- allfiles[!is.na(allfiles)] # ignore NAs arising from some hybrid assemblies
@@ -140,7 +144,7 @@ ReadsCounts <- function(object, name,
     df <- dplyr::bind_rows(df, result)
 
     # Format
-    split_names <- stringr::str_split(df$name, '_', simplify=TRUE)
+    split_names <- stringr::str_split(df$name, '_type_', simplify=TRUE)
     if (id == 'alias') {
         df$alias <- split_names[,1]
         df$index <- lookup[df$alias]
@@ -175,6 +179,7 @@ ReadsCounts <- function(object, name,
 #' @param name Slot name of Reads object in genomeCollection
 #'
 #' @importFrom ggplot2 ggplot aes theme labs geom_point theme_classic
+#' @importFrom dplyr group_by
 #'
 #' @export
 #' 
@@ -222,13 +227,18 @@ PlotReadsCounts <- function(object, name, label = 'index', base.size=20, label.s
                 ) +
                 labs(x='Number of reads', y='Nucleotides')
 
-    # Re-order
-    df <- df[order(df$nucleotides, decreasing=TRUE), ]
-    df$index <- factor(df$index, unique(df$index))
+    # Summarize seq depth (nucleotides) per sample (index)
+    smry <- group_by(df, index)
+    smry <- summarize(smry, nucleotides = sum(nucleotides))
+    smry <- smry[order(smry$nucleotides, decreasing=TRUE), ]
+
+    # Re-order based on seq depth
+    df$index <- factor(df$index, unique(smry$index))
     
     # Plot
-    p2 <- ggplot(data = df, mapping = aes(x = index, y = nucleotides, label=label)) +
+    p2 <- ggplot(data = df, mapping = aes(x = index, y = nucleotides, label=label, group = index)) +
                 #ggrepel::geom_text_repel(force_pull = 0, force = 1, alpha=.8, size=label.size) +
+                geom_line(col = 'grey') +
                 ggrepel::geom_text_repel(size=label.size, alpha=.8) +
                 geom_point(aes(col = type), shape = 21, size = bottom.point.size, stroke=bottom.point.stroke, position=scale_jitter) +
                 ggplot2::scale_color_manual(values = cols$type) +
@@ -236,7 +246,8 @@ PlotReadsCounts <- function(object, name, label = 'index', base.size=20, label.s
                 theme_classic(base.size) +
                 theme(
                     axis.text.x = ggplot2::element_text(angle=45, hjust=1, vjust=1, size=bottom.text.size),
-                    panel.grid.major.y = ggplot2::element_line()
+                    panel.grid.major = ggplot2::element_line(color = 'grey', linewidth = .25),
+                    panel.grid.minor = ggplot2::element_line(color = 'grey', linewidth = .1)
                 ) +
                 labs(x='Sample', y='Nucleotides')
 
@@ -254,6 +265,9 @@ PlotReadsCounts <- function(object, name, label = 'index', base.size=20, label.s
 #' @param min.base.quality Integer, PHRED score of individual bases to be qualified
 #' @param per.base.quality Boolean, whether to return per-base quality scores (TRUE) or summary scores (FALSE)
 #'
+#' @importFrom ShortRead encoding
+#' @importFrom Biostrings quality
+#'
 #' @export
 summarize_read_quality <- function(fastq=NULL, read=NULL, min.base.quality=15, per.base.quality=FALSE) {
 
@@ -266,8 +280,8 @@ summarize_read_quality <- function(fastq=NULL, read=NULL, min.base.quality=15, p
     )
 
     # Extract quality scores
-    code <- encoding(quality(fastq))
-    qual <- as.character(as.matrix(quality(fastq)[[read]]))
+    code <- ShortRead::encoding(Biostrings::quality(fastq))
+    qual <- as.character(as.matrix(Biostrings::quality(fastq)[[read]]))
     result <- data.frame(
         'quality' =code[qual],
         'position' = 1:length(qual),
@@ -379,9 +393,7 @@ ReadsQuality <- function(object, name,
 
     # Handling sample duplicates
     id <- if (length(data$alias)) 'alias' else 'index'
-    if (id == 'alias') {
-        lookup <- setNames(data$index, data$alias)
-    }
+    lookup <- if (id == 'alias') setNames(data$index, data$alias) else NULL
 
     # Check output
     df <- data$quality
@@ -394,21 +406,15 @@ ReadsQuality <- function(object, name,
         message(msg)
         df <- readr::read_csv(csv)
     }
-    if (is.null(df$name)) { # Enfore current formatting requirement: NAME
-        df <- data.frame()
-    }
+    df <- if (is.null(df$name)) data.frame() else df
 
     # Subset
     ind <- !is.na(df$name)
-    if (any(ind)) {
-        df <- df[ind, ]
-    }
+    df <- if (any(ind)) df[ind, ] else df
 
     # Re-compute samples
     ind <- df$index %in% recompute.sample
-    if (sum(ind)) {
-        df <- df[!ind, ]
-    }
+    df <- if (sum(ind)) df[!ind, ] else df
     
     # Timestamp
     time_start <- Sys.time()
@@ -419,7 +425,7 @@ ReadsQuality <- function(object, name,
     for (i in c('R1', 'R2', 'S', 'L')) {
         somefiles <- slot(data, i)
         if (!length(slot(data, i))) next
-        names(somefiles) <- paste(slot(data, id), i, sep='_')
+        names(somefiles) <- paste(slot(data, id), i, sep='_type_')
         allfiles <- c(allfiles, somefiles)
     }
     allfiles <- allfiles[!is.na(allfiles)] # ignore NAs arising from some hybrid assemblies
@@ -458,18 +464,23 @@ ReadsQuality <- function(object, name,
         result <- Map(summarize_fastq_quality, in_file = missing, max.reads = max.reads, reads.present = reads_present)
     }
     ind <- which(unlist(lapply(result, is.data.frame))) # Some cores will return <try-error>, remove ...
+    n_fails <- sum(!ind)
+    if (n_fails > 0) {
+        msg <- paste(n_fails, 'cores have encountered errors and NOT returned results...')
+        warning(msg)
+    }
     result <- dplyr::bind_rows(result[ind], .id = 'name')
     df <- dplyr::bind_rows(df, result)
 
     # Format
     if (id == 'alias') {
-        df$alias <- stringr::str_split(df$name, '_', simplify=TRUE)[,1]
+        df$alias <- stringr::str_split(df$name, '_type_', simplify=TRUE)[,1]
         df$index <- lookup[df$alias]
     } else {
-        df$index <- stringr::str_split(df$name, '_', simplify=TRUE)[,1]
+        df$index <- stringr::str_split(df$name, '_type_', simplify=TRUE)[,1]
         df$alias <- NULL
     }
-    df[['type']] <- stringr::str_split(df$name, '_', simplify=TRUE)[,2]
+    df[['type']] <- stringr::str_split(df$name, '_type_', simplify=TRUE)[,2]
 
     # Subset
     ind <- which(df$name %in% names(allfiles))
@@ -554,7 +565,8 @@ PlotReadsQuality <- function(object, name, x='length', y='avg_quality', col='typ
     # Plot
     plot <- ggplot(df, aes(x = x, y = y, col = col)) +
                 ggplot2::geom_point(size = pt.size, shape=pt.shape, stroke=pt.stroke) +
-                ggplot2::geom_vline(data = thresh, aes(xintercept = length, linetype=size)) + ggplot2::geom_hline(data = thresh, aes(yintercept = quality, linetype=size)) +
+                ggplot2::geom_vline(data = thresh, aes(xintercept = length, linetype=size)) + 
+                ggplot2::geom_hline(data = thresh, aes(yintercept = quality, linetype=size)) +
                 ggplot2::facet_wrap(~wrap, nrow=wrap.rows, ncol=wrap.cols) +
                 x_scale + y_scale +
                 ggplot2::scale_color_manual(values = cols$type) +
@@ -562,8 +574,8 @@ PlotReadsQuality <- function(object, name, x='length', y='avg_quality', col='typ
                 ggplot2::theme(
                     legend.position = 'top',
                     axis.text.x = ggplot2::element_text(angle=45, hjust=1, vjust=1),
-                    panel.grid.major.x = element_line(),
-                    panel.grid.major.y = element_line(),
+                    panel.grid.major = ggplot2::element_line(color = 'grey', linewidth = .25),
+                    panel.grid.minor = ggplot2::element_line(color = 'grey', linewidth = .1)
                 ) +
                 ggplot2::guides(
                     col = ggplot2::guide_legend(override.aes = list(size = 5, stroke=1))
@@ -714,8 +726,7 @@ fastp <- function(input_read_1 = NULL,
                  '--json',output.json,
                  '--html',output.html
                 )
-    cmd <- paste(cmd,'2>&1')
-    stdout <- system(cmd, intern=TRUE)
+    stdout <- system3(cmd)
     cat(paste(stdout, collapse='\n'))
 }
 

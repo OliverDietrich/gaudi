@@ -128,10 +128,10 @@ read_gff3 <- function(file,
     }
     
     ## Check for version
-    ind <- str_detect(flat, '##gff-version')
+    ind <- stringr::str_detect(flat, '##gff-version')
     if (sum(ind) >= 1) {
         version_header <- flat[ind][1]
-        version <- str_split(version_header, pattern = '\\s+')[[1]][[2]]
+        version <- stringr::str_split(version_header, pattern = '\\s+')[[1]][[2]]
         message('Reading gff version ', version)
     } else {
         msg <- paste0('Unknown header: Trying anyway...')
@@ -158,7 +158,7 @@ read_gff3 <- function(file,
     
     # Create object
     n <- fa_start - sum(header_region)
-    object <- read_tsv(file, col_types = readr::as.col_spec(gff3_columns), col_names = names(gff3_columns), comment = '#', n_max = n)
+    object <- readr::read_tsv(file, col_types = readr::as.col_spec(gff3_columns), col_names = names(gff3_columns), comment = '#', n_max = n)
     object <- as.data.frame(object)
 
     # Extract GFF3 column 'attributes'
@@ -313,20 +313,33 @@ fasta_headers <- function(input.fasta=NULL) {
     # Exit
     return(object)
 }
-
+        
 #' Read assembly graph
 #'
 #' Read assembly graph from .gfa file. File specification is available at https://github.com/GFA-spec/GFA-spec.
 #'
 #' @param input.graph Character, path to input file
+#' @param remove.seqs Whether to remove sequences from segments (will be included as a DNAStringSet)
+#' @param random.walk.steps.per.edge How many steps to take for each node in the assembly graph
+#' @param seed Numeric, seed to stabilize results of the random walk
+#'
+#' @importFrom stringr str_detect str_remove str_length
+#' @importFrom igraph graph_from_data_frame random_walk
 #'
 #' @export
-read_assembly_graph <- function(input.graph=NULL, remove.seqs = TRUE) {
+read_assembly_graph <- function(input.graph, 
+                                remove.seqs = TRUE, 
+                                random.walk.steps.per.edge = 500, 
+                                seed = 42
+                               ) {
 
     # Minimal check
     stopifnot(
         is_file(input.graph, suffix='gfa')
     )
+
+    # Variables
+    set.seed(seed) # Keep random walk stable
 
     # Read file
     object <- readLines(input.graph)
@@ -350,115 +363,206 @@ read_assembly_graph <- function(input.graph=NULL, remove.seqs = TRUE) {
 
     # Filter object
     for (i in names(components)) {
-        components[[i]] <- object[components[[i]]]
-        components[[i]] <- stringr::str_split(components[[i]], '\t', simplify=TRUE)
-        components[[i]] <- as.data.frame(components[[i]])
+        x <- components[[i]]
+        x <- object[x]
+        x <- stringr::str_split(x, '\t', simplify=TRUE)
+        x <- as.data.frame(x)
+        components[[i]] <- x
     }
 
     # Format
+    tag_type_values <- list(
+        'header' = c('VN:Z:' = 'VersionNumber',
+                     'sp:Z:' = 'ProgramVersion'),
+        'segments' = c('KC:i:' = 'KmerCount', 
+                       'DP:f:' = 'Coverage',
+                       'dp:f:' = 'Coverage', 
+                       'dp:i:' = 'Coverage',
+                       'LN:i:' = 'Length'),
+        'links' = c('RC:i:' = 'ReadCount')
+    )
+    # Potentially, one could loop through all known patterns to identify the matching ones.
+    # I'm afraid I'll fuck it up and spend unnecessary amounts of time...
+
     ## Header
     if ('header' %in% names(components)) {
-        names(components[['header']])[[1]] <- 'RecordType'
-        ### VersionNumber
-        index <- unlist(lapply(lapply(components[['header']], stringr::str_detect, pattern='VN:Z:'), all))
+        x <- components[['header']]
+        names(x)[[1]] <- 'RecordType'
+        
+        # VersionNumber
+        index <- unlist(lapply(lapply(x, str_detect, pattern='VN:Z:'), all))
         if (sum(index) == 1) {
-            names(components[['header']])[index] <- 'VersionNumber'
-            components[['header']][['VersionNumber']] <- stringr::str_remove(components[['header']][['VersionNumber']], 'VN:Z:')
+            names(x)[index] <- 'VersionNumber'
+            x[['VersionNumber']] <- str_remove(x[['VersionNumber']], 'VN:Z:')
         }        
-        ### ProgramVersion
-        if (all(stringr::str_detect(components[['header']][['V3']], 'sp:Z:'))) { # Requires position 3!
-            names(components[['header']])[[3]] <- 'ProgramVersion'
-            components[['header']][['ProgramVersion']] <- stringr::str_remove(components[['header']][['ProgramVersion']], 'sp:Z:')
+        
+        # ProgramVersion
+        index <- unlist(lapply(lapply(x, str_detect, pattern='sp:Z:'), all))
+        if (sum(index) == 1) {
+            names(x)[index] <- 'ProgramVersion'
+            x[['ProgramVersion']] <- str_remove(x[['ProgramVersion']], 'sp:Z:')
         }
+
+        components[['header']] <- x
     }
     
     ## Segments
     if ('segments' %in% names(components)) {
-        names(components[['segments']])[1:3] <- c('RecordType','Name','Sequence')
-        ### K-mer counts
-        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='KC:i:'), all))
+        x <- components[['segments']]
+        names(x)[1:3] <- c('RecordType','Name','Sequence')
+        
+        # K-mer counts
+        index <- unlist(lapply(lapply(x, str_detect, pattern='KC:i:'), all))
         if (sum(index) == 1) {
-            names(components[['segments']])[index] <- 'KmerCount'
-            components[['segments']][['KmerCount']] <- stringr::str_remove(components[['segments']][['KmerCount']], 'KC:i:')
-            components[['segments']][['KmerCount']] <- as.numeric(components[['segments']][['KmerCount']])
+            names(x)[index] <- 'KmerCount'
+            x[['KmerCount']] <- str_remove(x[['KmerCount']], 'KC:i:')
+            x[['KmerCount']] <- as.numeric(x[['KmerCount']])
         }        
-        ### Coverage
-        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='DP:f:'), all))
+        
+        # Coverage
+        index <- unlist(lapply(lapply(x, str_detect, pattern='DP:f:'), all))
         if (sum(index) == 1) {
-            names(components[['segments']])[index] <- 'Coverage'
-            components[['segments']][['Coverage']] <- stringr::str_remove(components[['segments']][['Coverage']], 'DP:f:')
-            components[['segments']][['Coverage']] <- as.numeric(components[['segments']][['Coverage']])
+            names(x)[index] <- 'Coverage'
+            x[['Coverage']] <- str_remove(x[['Coverage']], 'DP:f:')
+            x[['Coverage']] <- as.numeric(x[['Coverage']])
         }
-        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='dp:f:'), all))
+        
+        # Coverage
+        index <- unlist(lapply(lapply(x, str_detect, pattern='dp:f:'), all))
         if (sum(index) == 1) {
-            names(components[['segments']])[index] <- 'Coverage'
-            components[['segments']][['Coverage']] <- stringr::str_remove(components[['segments']][['Coverage']], 'dp:f:')
-            components[['segments']][['Coverage']] <- as.numeric(components[['segments']][['Coverage']])
+            names(x)[index] <- 'Coverage'
+            x[['Coverage']] <- str_remove(x[['Coverage']], 'dp:f:')
+            x[['Coverage']] <- as.numeric(x[['Coverage']])
         }
-        ### Length
-        index <- unlist(lapply(lapply(components[['segments']], stringr::str_detect, pattern='LN:i:'), all))
-        if (sum(index) == 1) {
-            names(components[['segments']])[index] <- 'Length'
-            components[['segments']][['Length']] <- stringr::str_remove(components[['segments']][['Length']], 'LN:i:')
-            components[['segments']][['Length']] <- as.numeric(components[['segments']][['Length']])
-        } else {
-            components[['segments']][['Length']] <- stringr::str_length(components[['segments']][['Sequence']])
-        }
-        ### Order
-        ind <- order(components[['segments']][['Length']], decreasing = TRUE)
-        components[['segments']] <- components[['segments']][ind, ]
-        ### Rownames
-        row.names(components[['segments']]) <- 1:nrow(components[['segments']])
-        components[['segments']][['Contig']] <- 1:nrow(components[['segments']])
 
-        ### Sequences
-        if (remove.seqs) {
-            components$sequence <- Biostrings::DNAStringSet(components[['segments']][['Sequence']])
-            components[['segments']][['Sequence']] <- NULL
+        # Coverage
+        index <- unlist(lapply(lapply(x, str_detect, pattern='dp:i:'), all))
+        if (sum(index) == 1) {
+            names(x)[index] <- 'Coverage'
+            x[['Coverage']] <- str_remove(x[['Coverage']], 'dp:i:')
+            x[['Coverage']] <- as.numeric(x[['Coverage']])
         }
+        
+        # Length
+        index <- unlist(lapply(lapply(x, str_detect, pattern='LN:i:'), all))
+        if (sum(index) == 1) {
+            names(x)[index] <- 'Length'
+            x[['Length']] <- str_remove(x[['Length']], 'LN:i:')
+            x[['Length']] <- as.numeric(x[['Length']])
+        } else {
+            x[['Length']] <- str_length(x[['Sequence']])
+        }
+        
+        # Rownames
+        row.names(x) <- 1:nrow(x)
+        x[['Contig']] <- 1:nrow(x)
+
+        # Sequences
+        if (remove.seqs) {
+            components$sequence <- Biostrings::DNAStringSet(x[['Sequence']])
+            x[['Sequence']] <- NULL
+        }
+
+        components[['segments']] <- x
     }
     
     ## Links
     if ('links' %in% names(components)) {
-        names(components[['links']])[1:6] <- c('RecordType','From','FromOrient','To','ToOrient','Overlap')
-        ### Map names to contigs
+        x <- components[['links']]
+        names(x)[1:6] <- c('RecordType','From','FromOrient','To','ToOrient','Overlap')
+
+        # Read counts
+        index <- unlist(lapply(lapply(x, str_detect, pattern='RC:i:'), all))
+        if (sum(index) == 1) {
+            names(x)[index] <- 'ReadCount'
+            x[['ReadCount']] <- str_remove(x[['ReadCount']], 'RC:i:')
+            x[['ReadCount']] <- as.numeric(x[['ReadCount']])
+        }
+        
+        # Map names to contigs
         lookup <- setNames(
             components[['segments']][['Contig']], 
             components[['segments']][['Name']]
         )
-        components[['links']][['FromContig']] <- lookup[components[['links']][['From']]]
-        components[['links']][['ToContig']] <- lookup[components[['links']][['To']]]        
+        x[['FromContig']] <- lookup[x[['From']]]
+        x[['ToContig']] <- lookup[x[['To']]]
+
+        components[['links']] <- x
     }
+    
     ## Jumps
     ## Containments
+    
     ## Paths
+    if ('paths' %in% names(components)) {
+        x <- components[['paths']]
+        names(x)[1:4] <- c('RecordType','PathName','SegmentNames','Overlaps')
+        
+        components[['paths']] <- x
+    }
+    
     ## Walks
     ## Comments
 
-    # Create graph
-    link_cols <- c('FromContig','ToContig','From','To','Overlap','FromOrient','ToOrient')
-    link_cols <- link_cols[link_cols %in% names(components$links)]
-    segment_cols <- c('Contig','Name','Coverage','Length','KmerCount')
-    segment_cols <- segment_cols[segment_cols %in% names(components$segments)]
-    graph <- igraph::graph_from_data_frame(
-        d = components$links[, link_cols],
-        vertices = components$segments[, segment_cols], 
-        directed = FALSE
-    )
-    components$graph <- graph
-
-    # Summarize outgoing links of segments
-    lookup <- components$links
-    lookup$N <- 1
-    lookup <- dplyr::group_by(lookup, FromContig)
-    lookup <- dplyr::summarize(lookup, ToContig = paste(ToContig, collapse = ','), LinkCount = sum(N))
-    #lookup <- setNames(lookup$ToContig, lookup$FromContig)
-    ind <- match(components$segments$Contig, lookup$FromContig)
-    components$segments$ToContig <- lookup$ToContig[ind]
-    components$segments$LinkCount <- lookup$LinkCount[ind]
+    # Exit 1
+    if (is.null(components$segments)) return(NULL)
     
+    if (length(components$links)) {
+
+        # Create graph
+        link_cols <- c('FromContig','ToContig','From','To','Overlap','FromOrient','ToOrient')
+        link_cols <- link_cols[link_cols %in% names(components$links)]
+        segment_cols <- c('Contig','Name','Coverage','Length','KmerCount')
+        segment_cols <- segment_cols[segment_cols %in% names(components$segments)]
+        graph <- igraph::graph_from_data_frame(
+            d = components$links[, link_cols],
+            vertices = components$segments[, segment_cols], 
+            directed = FALSE
+        )
+        components$graph <- graph
+
+        # Summarize outgoing links of segments
+        lookup <- components$links
+        lookup$N <- 1
+        lookup <- dplyr::group_by(lookup, FromContig)
+        lookup <- dplyr::summarize(lookup, ToContig = paste(ToContig, collapse = ','), LinkCount = sum(N))
+        #lookup <- setNames(lookup$ToContig, lookup$FromContig)
+        ind <- match(components$segments$Contig, lookup$FromContig)
+        components$segments$ToContig <- lookup$ToContig[ind]
+        components$segments$LinkCount <- lookup$LinkCount[ind]
+        
+        # Annotate segments
+        components$segments$Group <- components(components$graph)$membership
+
+        # Order segments (within groups)
+        starting_points <- unlist(lapply(split(components$segment$Contig, components$segment$Group), head, n=1)) # Get largest contig for each group
+        steps <- nrow(components$links) * random.walk.steps.per.edge
+        steps <- if (steps < random.walk.steps.per.edge) random.walk.steps.per.edge else steps
+        segment_order <- list()
+        for (n in 1:length(starting_points)) { # For each group (starting with the largest)
+            grp <- names(starting_points[n])
+            ctg <- starting_points[n]
+            segment_order[[grp]] <- unique(names(igraph::random_walk(components$graph, start = ctg, steps = steps, mode = 'out'))) # Walk across the group from largest contig
+        }
+        index <- unlist(segment_order, use.names = FALSE)
+        names(index) <- rep(names(segment_order), lapply(segment_order, length))
+        
+        if (!all(components$segments$Contig %in% index)) stop('Random walk did not include all segments. Please increase random.walk.steps.per.edge!')
+        ind <- match(index, components$segments$Contig)
+        components$segments <- components$segments[ind, ]
+        components$segments$Oldcontig <- components$segments$Contig
+        components$segments$Contig <- 1:nrow(components$segments)
+        
+    } else {
+
+        components$segments$ToContig <- 'None'
+        components$segments$LinkCount <- 0
+        components$segments$Group <- components$segments$Contig
+        
+    }
+
     # Annotate segments
-    components$segments$Group <- components(graph)$membership
+    components$segments$Coverage <- if (is.null(components$segments$Coverage)) NA else components$segments$Coverage
     components$segments$N <- 1
     components$segments <- dplyr::mutate(dplyr::group_by(components$segments, Group), 
                                          Group_Length = sum(Length), 
@@ -469,4 +573,48 @@ read_assembly_graph <- function(input.graph=NULL, remove.seqs = TRUE) {
     
     # Exit
     return(components)
+}
+
+#' Read HMMer domain table
+#'
+#' @param file Path to HMMer domain table
+#' @returns Data.frame
+#'
+#' @importFrom readr read_table2 col_character col_integer col_double
+#' 
+read_domtbl <- function(file) {
+    
+    stopifnot(
+        is_file(file)
+    )
+
+    # Variables
+    cols <- list(
+        target.name = col_character(),
+        target.accession = col_character(),
+        target.length = col_integer(),
+        hmm.name = col_character(),
+        hmm.accession = col_character(),
+        hmm.length = col_integer(),
+        full.seq.E.value = col_double(),
+        full.seq.score = col_double(),
+        full.seq_bias = col_double(),
+        domain.number = col_integer(),
+        total.domains = col_integer(),
+        domain.cE.value = col_double(),
+        domain.iE.value = col_double(),
+        domain.score = col_double(),
+        domain.bias = col_double(),
+        hmm.coord.from = col_double(),
+        hmm.coord.to = col_double(),
+        alignment.coord.from = col_double(),
+        alignment.coord.to = col_double(),
+        envelope.coord.from = col_double(),
+        envelope.coord.to = col_double(),
+        accuracy = col_double(),
+        target.description = col_character()
+    )
+
+    # Read (& exit)
+    read_table2(file, comment = '#', col_names = names(cols), col_types = cols)
 }

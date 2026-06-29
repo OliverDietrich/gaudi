@@ -60,7 +60,8 @@ AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2'
     }
     data <- data[ind.match, ]
 
-    # Remove samples that do not have associated files
+    # Remove samples that do not have ANY associated files
+    # BUG: when multiple reads present (R1, R2, L) and only some files are hybrid, any NA removes the whole sample
     df_remove <- data.frame(row.names = 1:nrow(data))
     for (i in names(data)) {
         if (i == 'index') {
@@ -70,7 +71,7 @@ AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2'
         }
     }
     row_index <- apply(df_remove, 1, all)
-    data <- data[row_index, ]
+    #data <- data[row_index, ] # BUG - currently there is NO FILTERING !!!
     
     # Format data
     vectors <- list()
@@ -82,7 +83,7 @@ AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2'
         }
     }
 
-    ## Concatenate duplicated reads of the same type
+    # Concatenate duplicated reads of the same type
     bool_duplicates <- duplicated(data[['index']])
     name_duplicates <- data[['index']][bool_duplicates]
     if (length(name_duplicates)) {
@@ -97,22 +98,23 @@ AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2'
     if (v_len[['L']]) {type <- c(type, 'long')}
     if (v_len[['R1']] & v_len[['R2']]) {type <- c(type, 'paired')}
     if (v_len[['S']]) {type <- c(type, 'unpaired')}
+    # This is super weird. Re-phrase ASAP...
 
     # Read summary
     smry <- data.frame()
     
     # Create object
     Reads(object, name) <- methods::new("Reads", 
-                                         "index" = as.character(data[['index']]),
+                                        "index" = as.character(data[['index']]),
                                         "alias" = as.character(vectors[['alias']]),
-                                         "R1" = vectors[['R1']],
-                                         "R2" = vectors[['R2']],
-                                         "S" = vectors[['S']],        
-                                         "L" = vectors[['L']],                
-                                         "counts" = smry,
-                                         "quality" = smry,
-                                         "type" = type
-                                        )
+                                        "R1" = vectors[['R1']],
+                                        "R2" = vectors[['R2']],
+                                        "S" = vectors[['S']],        
+                                        "L" = vectors[['L']],                
+                                        "counts" = smry,
+                                        "quality" = smry,
+                                        "type" = type
+                                       )
     return(object)
 }
 
@@ -124,15 +126,15 @@ AddReads <- function(object, data, name, samples = 'index', R1 = 'R1', R2 = 'R2'
     msg <- NULL
 
     if (length(object@index) < 1) {
-      msg <- c(msg, "Too few samples registered for this Reads object.")
+        msg <- c(msg, "Too few samples registered for this Reads object.")
     }
 
     if (length(object@R1) != length(object@R2)) {
-      msg <- c(msg, "Forward (R1) and reverse (R2) reads do not match.")
+        msg <- c(msg, "Forward (R1) and reverse (R2) reads do not match.")
     }
 
     if (any(duplicated(object@alias))) {
-      msg <- c(msg, "Duplicated alias detected. Something went wrong.")
+        msg <- c(msg, "Duplicated alias detected. Something went wrong.")
     }
 
     if (length(msg)) { return(msg) }
@@ -148,7 +150,7 @@ methods::setValidity("Reads", .valid.Reads)
 .show.Reads <- function(object) {
 
     # Summarize
-    n <- length(object@index)
+    n <- length(unique(object@index))
     m <- length(object@alias)
     m <- if (length(m)) m else n
     print.index <- if (n > 5) c(head(object@index,3), "...", tail(object@index,3)) else object@index
@@ -162,7 +164,7 @@ methods::setValidity("Reads", .valid.Reads)
 
     # Print
     cat(
-        is(object),"\n","containing", length(object$index), "samples with", m, "FASTQ files:", print.index,
+        is(object),"\n","containing", n, "samples with", m, "FASTQ files:", print.index,
         "\n",
         "Files exist?", file.summary, "\n"
     )
@@ -195,10 +197,6 @@ setMethod("$", "Reads", function(x, name) slot(x, name))
 
 #' Accessors for the FASTQ files of a Reads object.
 #'
-#' @description 
-#' The \code{meta.data} slot in an genomeCollection object holds
-#' a data.frame containing unstructured information associated to each genome.
-#'
 #' @author Oliver Dietrich
 #' @export
 #' 
@@ -226,4 +224,19 @@ setMethod("long", "Reads", function(x) {
     long <- setNames(x@L, x@index)
     ind <- file.exists(long)
     return(long[ind])
+})
+
+#' Accessors for the FASTQ quality summaries of a Reads object.
+#'
+#' @export
+#' 
+setMethod("Counts", "Reads", function(x) {
+    if (!length(x@counts)) return(NULL)
+    return(x@counts)
+})
+
+setMethod("Counts<-", "Reads", function(x, value) {
+  x@counts <- value
+  validObject(x)
+  x
 })

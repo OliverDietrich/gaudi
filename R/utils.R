@@ -182,7 +182,7 @@ system3 <- function(command,
     command <- if (include.errors) paste(command, '2>&1') else command
 
     # Call system
-    if (verbose) cat(command)
+    if (verbose) cat(command, '\n')
     stdout <- system(command, intern=TRUE)
 
     # Re-format output

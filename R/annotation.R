@@ -803,13 +803,13 @@ padloc <- function(protein.faa=NULL, genes.gff=NULL, genome.fna=NULL,
 #'
 #' @export
 #'
-RunPadloc <- function(object, slot = 'Bakta',
-                     db = '../databases/padloc',
-                     recompute = FALSE,
-                     recompute.sample = NULL,
-                     debug = FALSE, debug.n = 1
-                    ) {
-
+RunPadloc <- function(object, slot, db,
+                      name = 'Padloc',
+                      recompute = FALSE,
+                      recompute.sample = NULL,
+                      debug = FALSE, debug.n = 1
+                     ) {
+    
     # Minimal check
     stopifnot(
         is(object) == 'genomeCollection',
@@ -818,12 +818,12 @@ RunPadloc <- function(object, slot = 'Bakta',
 
     # Variables
     ind <- file.exists(object$genome)
-    out.dir <- paste0(object$path[ind],'annotation/padloc/')
+    out.dir <- paste0(object$path[ind],'annotation/',name,'/')
     genomes <- object$genome[ind]
     force <- if (recompute | length(recompute.sample)) TRUE else FALSE
 
     # Output
-    data <- Annotation(object, 'Padloc')
+    data <- Annotation(object, name)
     if (is.null(data)) {
         prefix <- index(object)[ind]
         data <- methods::new("Annotation", 
@@ -833,7 +833,7 @@ RunPadloc <- function(object, slot = 'Bakta',
                              proteins = character(),
                              log = paste0(out.dir,'runtime.log'),
                              genome = 'genome',
-                             tool = 'Padloc',
+                             tool = 'Padloc', # Add database = db to Annotation class
                              type = "default"
                             )
     }
@@ -863,7 +863,7 @@ RunPadloc <- function(object, slot = 'Bakta',
     }
     
     # Assign object
-    Annotation(object, 'Padloc') <- data
+    Annotation(object, name) <- data
     
     # Exit
     return(object)
@@ -1187,6 +1187,26 @@ CombineAnnotations <- function(object, name, annotations,
         missing <- if (debug.sample %in% index(object)) debug.sample else '';
     }
 
+    # Databases
+    AMRFINDER <- NULL
+    if (!is.null(db.amrfinder)) {
+        if (is_file(db.amrfinder, silent = TRUE)) {
+            AMRFINDER <- readr::read_tsv(db.amrfinder)
+            names(AMRFINDER) <- c('Accession','Link','Symbol','Name','Lenght','TC1','TC2','Scope','AMR_Type','AMR_Subtype','AMR_Class','AMR_Subclass')
+        } else {
+            warning('AMRfinder database not found. Will be skipped...')
+        }
+    }
+    PHROG <- NULL
+    if (!is.null(db.phrogs)) {
+        if (is_file(db.amrfinder, silent = TRUE)) {
+            PHROG <- readr::read_csv(db.phrogs)
+            PHROG <- PHROG[!is.na(PHROG$Annotation), ]
+        } else {
+            warning('PHROG database not found. Will be skipped...')
+        }
+    }
+    
     # Input
     if (length(ind.anns)) {
         msg <- paste('Found', sum(ind.anns), 'out of', length(ind.anns), 'Annotation objects:', paste(annotations[ind.anns], collapse=', '))
@@ -1227,10 +1247,8 @@ CombineAnnotations <- function(object, name, annotations,
         all <- extract_gff3_attributes(x)
 
         # Database lookup
-        if (is_file(db.amrfinder, silent = TRUE)) {
-            db <- readr::read_tsv(db.amrfinder)
-            names(db) <- c('Accession','Link','Symbol','Name','Lenght','TC1','TC2','Scope','AMR_Type','AMR_Subtype','AMR_Class','AMR_Subclass')
-            add <- merge(all, db, by = 'Name')
+        if (!is.null(AMRFINDER)) {
+            add <- merge(all, AMRFINDER, by = 'Name')
             if (nrow(add) > 1) {
                 add$gene_name <- add$Name
                 add$Name <- paste0(add$AMR_Class, '__', add$Symbol)
@@ -1240,7 +1258,18 @@ CombineAnnotations <- function(object, name, annotations,
                 x <- dplyr::bind_rows(x, add)
             }
         }
-        if (is_file(db.phrogs, silent = TRUE)) {}
+        if (!is.null(PHROG)) {
+            ind <- which(all$Name %in% PHROG$Annotation)
+            if (length(ind) > 0) {
+                add <- all[ind, ]
+                add$gene_name <- add$Name
+                ind <- match(add$Name, PHROG$Annotation)
+                add$Name <- PHROG$Category[ind]
+                add$type <- 'PHROG'
+                add <- format_gff3(add, replace.attributes = TRUE)
+                x <- dplyr::bind_rows(x, add)
+            }
+        }
 
         # Remove duplicates)
         x <- if (remove.duplicates) format_gff3(x, remove.duplicates = TRUE) else x;
@@ -1260,4 +1289,78 @@ CombineAnnotations <- function(object, name, annotations,
 
     # Exit
     return(object)
+}
+
+#' Re-orient genomes using DNAapler
+#'
+#' 
+dnaapler <- function() {
+    
+    # ERRORs before evengetting started...
+
+    # Initial run failed MMseqs easy-search (return code 1)
+}
+
+#' Run DNAapler for genomeCollection
+RunDnaapler <- function(object) {
+
+    return(object)
+}
+
+#' Calculate track overlays
+#'
+#' @param gff Data.frame storing GFF3 formatted genome features (see ?read_gff3)
+#' @param name Column name to store tracks
+#' @param gene.start Column name of gene start coordinate
+#' @param gene.end Column name of gene end coordinate
+#'
+#' @returns data.frame
+#'
+calculate_track_overlays <- function(gff, name = 'Track', gene.start = 'start', gene.end = 'end') {
+
+    # Minimal checks
+    stopifnot(
+        is.data.frame(gff)
+    )
+
+    # Checks
+    if (name %in% names(gff)) stop(paste('Column', name, 'already exists. Aborting...'))
+    if (!gene.start %in% names(gff)) stop(paste('Column', gene.start, 'must exist. Aborting...'))
+    if (!is.numeric(gff[[gene.start]])) stop(paste('Column', gene.start, 'must contain numeric coordinates. Aborting...'))
+    if (!gene.end %in% names(gff)) stop(paste('Column', gene.end, 'must exists. Aborting...'))
+    if (!is.numeric(gff[[gene.end]])) stop(paste('Column', gene.end, 'must contain numeric coordinates. Aborting...'))
+
+    # Set variables
+    tracks <- list()
+    tracks[1] <- 0
+    t <- 1
+
+    # Create empty vector
+    v <- numeric(length = nrow(gff))
+
+    # Iterate
+    for (n in 1:nrow(gff)) {
+    
+        # Variables
+        start <- gff$start[[n]]
+        end <- gff$end[[n]]
+
+        # Set track
+        ind <- which(start > tracks)
+        if (length(ind)) {
+            t <- head(ind, 1)
+        } else {
+            t <- length(tracks) + 1
+        }
+        tracks[[t]] <- end
+    
+        # Assign
+        v[[n]] <- t
+    }
+    
+    # Assign
+    gff[[name]] <- factor(v)
+    
+    # Exit
+    return(gff)
 }

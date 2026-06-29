@@ -52,11 +52,11 @@ check_version <- function(program=NULL, command='--version', return.version = FA
     )
 
     # Version command
-    cmd <- paste(program,command, '2>&1')
+    cmd <- paste(program,command)
     if (program %in% names(exceptions)) {
         cmd <- exceptions[[program]]
     }
-    version <- system(cmd, intern = TRUE)
+    version <- system3(cmd, include.errors = FALSE, return.stdout = TRUE)
 
     # Exit 2
     if (length(version) == 0) {
@@ -77,15 +77,6 @@ check_version <- function(program=NULL, command='--version', return.version = FA
     # Exit
     if (return.version) return(version)
 }
-
-#' Check output file
-#'
-#' Helper function to determine if an output file exists.
-# ...
-
-#' Check output directory
-#'
-#' Helpter function to determine if an output directory exists or should be created
 
 #' Detect the number of processing units available
 #' 
@@ -149,6 +140,32 @@ is_file <- function(file_name=NULL, suffix=NULL, silent=FALSE) {
 
     # Return TRUE
     if (file.exists(file_name)) return(TRUE) else return(FALSE)
+}
+
+#' Check FASTA formatting
+#'
+#' @param file Path to FASTA file
+#' @param type Define whether 'DNA', 'RNA', or 'protein' sequences are expected.
+#'
+is_fasta <- function(file, type = 'any') {
+
+    # Check input
+    missing <- !file.exists(file)
+    msg <- paste(sum(missing), 'out of', length(missing), 'files not found.')
+    if (any(missing)) stop(msg)
+
+    # Try reading
+    FUN <- NULL
+    FUN <- if (type == 'protein') Biostrings::readAAStringSet else FUN;
+    FUN <- if (type == 'DNA') Biostrings::readDNAStringSet else FUN;
+    FUN <- if (type == 'RNA') Biostrings::readRNAStringSet else FUN;
+    n_found <- if (is.null(FUN)) length(file) else sum(unlist(lapply(lapply(file, FUN, nrec = 1), length)));
+    if (n_found < length(file)) {
+        warning('Not able to read all FASTA files. Aborting...')
+        return(FALSE)
+    }
+
+    return(TRUE)
 }
 
 #' Check FASTQ formatting

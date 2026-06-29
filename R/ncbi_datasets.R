@@ -13,37 +13,38 @@
 #' @param max.download.minutes Numeric, maximum download time in seconds
 #' 
 #' @export
-ncbi_genome_summary <- function(dirname='data/',
-                                summary = 'data/ncbi_genome_summary.tsv',
+ncbi_genome_summary <- function(db_path,
+                                summary = 'ncbi_genome_summary.tsv',
                                 refseq='refseq_assembly_summary.tsv',
                                 genbank='genbank_assembly_summary.tsv',
-                                url_refseq='ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt',
+                                url_refseq='ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt',
                                 url_genbank='ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt',
                                 max.download.minutes = 30,
                                 max.download.seconds = max.download.minutes*60
 ) {
 
     # Checks
-    if(!dir.exists(dirname)) {
-        msg <- paste('Directory',dirname,'does not exist.')
+    if(!dir.exists(db_path)) {
+        msg <- paste('Directory',db_path,'does not exist.')
         stop(msg)
     }
-    if (!endsWith(dirname,'/')) {
-        dirname <- paste0(dirname,'/')
+    if (!endsWith(db_path,'/')) {
+        db_path <- paste0(db_path,'/')
     }
     stopifnot(
         is.numeric(max.download.seconds)
     )
 
     # Exit 1
+    summary <- paste0(db_path, summary)
     if (file.exists(summary)) {
         object <- vroom::vroom(summary, show_col_types=FALSE)
         return(object)
     }
 
     # Modify file names
-    genbank <- paste0(dirname,genbank)
-    refseq <- paste0(dirname,refseq)
+    genbank <- paste0(db_path, genbank)
+    refseq <- paste0(db_path, refseq)
     
     # Download files
     options(timeout = max.download.seconds)
@@ -153,17 +154,25 @@ ncbi_datasets_download_genome <- function(Assembly.version = NULL,
     index <- Assembly.version %in% output_present
     missing <- Assembly.version[!index]
     missing <- if (debug) head(missing, debug.n) else missing # DEBUGGING
-    msg <- paste('Output present for',sum(index),'out of',length(index),'genomes.','Downloading', length(missing),'...')
-    message(msg)
-    writeLines(missing, out.missing)
+    msg <- paste('Output present for',sum(index),'out of',length(index),'genomes.')
+    if (length(missing) > 0) {
+        writeLines(missing, out.missing)
+        msg <- paste(msg, 'Downloading', length(missing),'...')
+        message(msg)
+    } else {
+        message(msg)
+        return()
+    }
 
     # Download dataset
     if (!file.exists(out.zip)) {
-        cmd <- paste('datasets download genome accession','--inputfile',out.missing,'--include',paste(categories_genome,collapse=','),'--filename',out.zip,'2>&1')
-        message(cmd)
-        stdout <- system(cmd, intern=TRUE)
-        stdout <- paste(stdout,'\n')
-        writeLines(stdout, download.log)
+        cmd <- paste(
+            'datasets','download','genome','accession',
+            '--inputfile',out.missing,
+            '--include',paste(categories_genome,collapse=','),
+            '--filename',out.zip
+        )
+        system3(cmd, log.file = download.log)
     } else {
         msg <- paste('NCBI archive', out.zip, 'exists. Skipping download...')
         message(msg)
@@ -197,7 +206,7 @@ ncbi_datasets_download_genome <- function(Assembly.version = NULL,
         checksums <- read.table(in.checksums, col.names = c('ncbi_checksum','file'))
         checksums$file <- paste0(out.dir, checksums$file)        
         checksums$local_checksum <- sapply(checksums$file, md5sums)
-        checksums$newfile <- paste0(out.final, str_remove(checksums$file, out.data))
+        checksums$newfile <- paste0(out.final, stringr::str_remove(checksums$file, out.data))
         index <- checksums$local_checksum == checksums$ncbi_checksum
         msg <- paste('Checksums for',sum(index),'of',length(index),'files match. Moving files to keep...')
         checksums <- checksums[index, ]

@@ -61,6 +61,12 @@ setGeneric("unpaired", function(x) standardGeneric("unpaired"))
 #' @export 
 setGeneric("long", function(x) standardGeneric("long"))
 
+#' @export 
+setGeneric("Counts", function(x) standardGeneric("Counts"))
+
+#' @export 
+setGeneric("Counts<-", function(x, value) standardGeneric("Counts<-"))
+
 ########################################
 # Getter/setters for Annotation.
 

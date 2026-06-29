@@ -67,10 +67,9 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
     check_version('spades.py')
 
     # Variables
-    out.dir <- if(endsWith(out.dir, '/')) out.dir else paste0(out.dir, '/')
-    log.file <- if (is.null(log.file)) paste0(out.dir, 'runtime.log') else log.file
+    out.dir <- if(endsWith(out.dir, '/')) out.dir else paste0(out.dir, '/');
+    log.file <- if (is.null(log.file)) paste0(out.dir, 'runtime.log') else log.file;
     contigs.fasta <- paste0(out.dir, 'contigs.fasta')
-    
 
     # Check output
     if (file.exists(contigs.fasta) & !overwrite) {
@@ -103,23 +102,23 @@ spades_assembly <- function(input.1=NULL, input.2=NULL, input.s=NULL,
 
     # Add flags
     flags <- list()
-    flags$isolate <- if(isolate) '--isolate' else NULL
-    flags$sc <- if(single.cell) '--sc' else NULL
-    flags$meta <- if(metagenomic) '--meta' else NULL
-    flags$bio <- if(biosynthetic) '--bio' else NULL
-    flags$sewage <- if(sewage) '--sewage' else NULL
-    flags$corona <- if(corona) '--corona' else NULL
-    flags$rna <- if(rna) '--rna' else NULL
-    flags$plasmid <- if(plasmid) '--plasmid' else NULL
-    flags$metaviral <- if(metaviral) '--metaviral' else NULL
-    flags$metaplasmid <- if(metaplasmid) '--metaplasmid' else NULL
-    flags$rnaviral <- if(rnaviral) '--rnaviral' else NULL
+    flags$isolate <- if(isolate) '--isolate' else NULL;
+    flags$sc <- if(single.cell) '--sc' else NULL;
+    flags$meta <- if(metagenomic) '--meta' else NULL;
+    flags$bio <- if(biosynthetic) '--bio' else NULL;
+    flags$sewage <- if(sewage) '--sewage' else NULL;
+    flags$corona <- if(corona) '--corona' else NULL;
+    flags$rna <- if(rna) '--rna' else NULL;
+    flags$plasmid <- if(plasmid) '--plasmid' else NULL;
+    flags$metaviral <- if(metaviral) '--metaviral' else NULL;
+    flags$metaplasmid <- if(metaplasmid) '--metaplasmid' else NULL;
+    flags$rnaviral <- if(rnaviral) '--rnaviral' else NULL;
     flags <- paste(unlist(flags), collapse=' ')
-    flags <- if (flags == '') NULL else flags
+    flags <- if (flags == '') NULL else flags;
 
     # Main
     cmd <- paste('spades.py', input,'-o', out.dir,'--threads',threads, flags)
-    system3(cmd, log.file)
+    system3(cmd, log.file = log.file)
 }
 
 #' RunSPAdes
@@ -265,14 +264,16 @@ unicycler_assembly <- function(short.1=NULL, short.2=NULL, unpaired=NULL, long=N
     if (overwrite) {
         unlink(out.dir, recursive=TRUE)
     }
-    if (!dir.exists(out.dir)) {
-        dir.create(out.dir, recursive=TRUE)
-    }
+    if (!dir.exists(out.dir)) dir.create(out.dir, recursive=TRUE)
+
+    # Exit 1
     if (file.exists(out.fasta)) {
         msg <- paste('Output file', out.fasta, 'already exists.')
         warning(msg)
         return()
     }
+
+    # Exit 2
 
     # Check input
     short.1 <- if (is.na(short.1)) NULL else short.1
@@ -290,6 +291,9 @@ unicycler_assembly <- function(short.1=NULL, short.2=NULL, unpaired=NULL, long=N
     # Main
     cmd <- paste('unicycler', paired, unpaired, long, '--out', out.dir, '--keep', keep, '--mode', mode, '--linear_seqs', linear_seqs, '-t', threads)
     system3(cmd, log.file = log.file)
+
+    # Exit 0
+    return()
 }
 
 #' Run Unicycler
@@ -308,6 +312,9 @@ RunUnicycler <- function(object, name = 'Unicycler',
                          reads.name = 'filtered',
                          recompute = FALSE,
                          recompute.sample = NULL,
+                         samples.skip = NULL,
+                         debug = FALSE,
+                         debug.n = 1,
                          ...
                         ) {
 
@@ -322,7 +329,7 @@ RunUnicycler <- function(object, name = 'Unicycler',
     # Variables
     samples <- reads$index
     path <- object$path[match(samples, index(object))]
-    output <- paste0(path, 'assembly/Unicycler/')
+    output <- paste0(path, 'assembly/',name,'/')
     contigs <- paste0(output, 'assembly.fasta')
     graphs <- paste0(output, 'assembly.gfa')
     log <- paste0(output, 'runtime.log')
@@ -349,14 +356,16 @@ RunUnicycler <- function(object, name = 'Unicycler',
     # Check output
     ind <- file.exists(contigs)
     missing <- if (recompute) samples else samples[!ind]
-    missing <- if (length(recompute.sample)) recompute.sample else missing # Debug mode
+    missing <- if (length(recompute.sample)) recompute.sample else missing
+    missing <- if (debug) head(missing, debug.n) else missing
     msg <- paste('Assembly found for', sum(ind), 'samples. Running Unicycler for', length(missing), 'samples...')
     message(msg)
 
     # Main
     for (sample in samples) {
         if (!sample %in% missing) next
-        cat(sample)
+        if (sample %in% samples.skip) next
+        cat(sample,'\n')
         i <- which(samples == sample)        
         unicycler_assembly(short.1 = reads$R1[i], short.2 = reads$R2[i], unpaired = reads$S[i], long = reads$L[i],
                         out.dir = output[[i]],
@@ -426,27 +435,27 @@ raven_assembly <- function(input.fastq, output.fasta,
 #' @export
 flye_assembly <- function(pacbio.raw=NA, pacbio.corr=NA, pacbio.hifi=NA, nano.raw=NA, nano.corr=NA, nano.hq=NA, # Input formats
                           genome.size=NULL, 
-                          out.dir=NULL, 
+                          out.dir=NULL,
+                          log.file = NULL,
                           threads=n_proc(), 
-                          help=FALSE
+                          overwrite=FALSE
                          ) {
 
-    # Variables
-    input_files <- setNames(
-        c(pacbio.raw,pacbio.corr,pacbio.hifi,nano.raw,nano.corr,nano.hq),
-        c('pacbio.raw','pacbio.corr','pacbio.hifi','nano.raw','nano.corr','nano.hq')
-    )
-    if (!endsWith(out.dir, '/')) {
-        out.dir <- paste0(out.dir,'/')
-    }
-    out_final <- paste0(out.dir, 'assembly.fasta')
-    
     # Minimal check
     stopifnot(
         !is.null(out.dir)
     )
     check_installed('flye', silent=TRUE)
     check_version('flye')
+
+    # Variables
+    input_files <- setNames(
+        c(pacbio.raw,pacbio.corr,pacbio.hifi,nano.raw,nano.corr,nano.hq),
+        c('pacbio.raw','pacbio.corr','pacbio.hifi','nano.raw','nano.corr','nano.hq')
+    )
+    out.dir <- if (endsWith(out.dir, '/')) out.dir else paste0(out.dir,'/')
+    out_final <- paste0(out.dir, 'assembly.fasta')
+    log.file <- if(is.null(log.file)) paste0(out.dir, 'runtime.log') else log.file
 
     # Check input
     input_present <- !is.na(input_files)
@@ -461,8 +470,9 @@ flye_assembly <- function(pacbio.raw=NA, pacbio.corr=NA, pacbio.hifi=NA, nano.ra
     input_type <- str_replace(names(input_files[input_present]), '\\.', '-')
 
     # Check output
+    if (overwrite) unlink(out.dir, recursive=TRUE)
     if (!dir.exists(out.dir)) {
-        msg <- paste('Directory', out.dir, 'does not exits. Will be created...')
+        msg <- paste('Directory', out.dir, 'does not exist. Will be created...')
         dir.create(out.dir, recursive=FALSE)
         warning(msg)
     }
@@ -476,14 +486,102 @@ flye_assembly <- function(pacbio.raw=NA, pacbio.corr=NA, pacbio.hifi=NA, nano.ra
 
     # Run Flye
     cmd <- paste0('flye',' --',input_type,' ',input_file,' --out-dir ',out.dir,' --threads ',threads)
-    if (!is.null(genome.size)) {
-        cmd <- paste0(cmd,' --genome-size ',genome.size)
+    cmd <- if (!is.null(genome.size)) paste0(cmd,' --genome-size ',genome.size) else cmd
+    system3(cmd, log.file = log.file)
+}
+
+#' Run Flye
+#'
+#' Run Flye assembly for a genomeCollection
+#' 
+#' @param object A genomeCollection object
+#' @param name Slot to use for Assemblies(object)
+#' @param type Type of reads used for assembly. One of pacbio.raw, pacbio.corr, pacbio.hifi, nano.raw, nano.corr, nano.hq.
+#' @param reads.name Slot in ReadsNames(object
+#' @param threads Number of cores to use
+#' @param ... Other arguments to flye_assembly()
+#'
+#' @export
+#'
+RunFlye <- function(object, 
+                    name = 'Flye',
+                    reads.name = 'filtered',
+                    type,
+                    recompute = FALSE,
+                    recompute.sample = NULL,
+                    samples.skip = NULL,
+                    debug = FALSE,
+                    debug.n = 1,
+                    ...
+                   ) {
+
+    # Minimal check
+    stopifnot(
+        reads.name %in% ReadsNames(object),
+        type %in% c('pacbio.raw', 'pacbio.corr', 'pacbio.hifi', 'nano.raw', 'nano.corr', 'nano.hq')
+    )
+
+    # Fetch data
+    reads <- Reads(object, reads.name)
+
+    # Variables
+    samples <- reads$index
+    path <- object$path[match(samples, index(object))]
+    output <- paste0(path, 'assembly/Flye/')
+    contigs <- paste0(output, 'assembly.fasta')
+    graphs <- paste0(output, 'assembly_graph.gfa')
+    log <- paste0(output, 'runtime.log')
+
+    # Check input
+    if (!length(reads$L)) {
+        msg <- paste0('No long reads found in Reads(object, "', reads.name, '") but required for Flye assembly. Aborting...')
+        stop(msg)
     }
-    cmd <- paste0(cmd,' 2>&1')
-    message(cmd)
-    stdout <- system(cmd, intern=TRUE)
-    stdout <- paste(stdout, collapse='\n')
-    cat(stdout)
+
+    # Create object
+    data <- Assembly(object, name)
+    if (is.null(data)) {
+        data <- methods::new("Assembly", 
+                             "index" = samples,
+                             "contig" = contigs,
+                             "graph" = graphs,
+                             "log" = log,
+                             "reads" = reads.name,
+                             "tool" = 'Flye',
+                             "type" = type
+                            )
+    }
+    check <- all(data$index == samples) & all(data$contig == contigs) & all(data$log == log) & data$reads == reads.name
+    if (!check) {
+        msg <- paste0('Some slots in Assembly(object, "', name, '") do not contain the correct data. Aborting...')
+        stop(msg)
+    }
+
+    # Check output
+    ind <- file.exists(contigs)
+    missing <- if (recompute) samples else samples[!ind]
+    missing <- if (length(recompute.sample)) recompute.sample else missing # Debug mode
+    missing <- if (debug) head(missing, debug.n) else missing
+    msg <- paste('Assembly found for', sum(ind), 'samples. Running Flye for', length(missing), 'samples...')
+    message(msg)
+
+    # Main
+    for (sample in samples) {
+        if (!sample %in% missing) next
+        if (sample %in% samples.skip) next
+        cat(sample)
+        i <- which(samples == sample)
+        if (type == 'pacbio.raw') flye_assembly(pacbio.raw = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+        if (type == 'pacbio.corr') flye_assembly(pacbio.corr = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+        if (type == 'pacbio.hifi') flye_assembly(pacbio.hifi = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+        if (type == 'nano.raw') flye_assembly(nano.raw = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+        if (type == 'nano.corr') flye_assembly(nano.corr = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+        if (type == 'nano.hq') flye_assembly(nano.hq = reads$L[[i]], out.dir = output[[i]], log.file = log[[i]], overwrite = TRUE, ...)
+    }
+
+    # Replace assembly
+    Assembly(object, name) <- data
+    return(object)
 }
 
 #' Medaka polishing
@@ -610,22 +708,27 @@ polypolish <- function(assembly, out.dir,
 #' @param object genomeCollection
 #' @param name Slot name of Assembly object in genomeCollection
 #' @param filter Data.frame with filters to apply. Columns: sample, length.min, length.max, cov.min. (Not checked, experimental...)
+#' @param samples Names of samples to write genomes for. Used to decide for different assemblies in different samples.
 #' @param min.size Minimum size of contigs, either single value or threshold for each sample
 #' @param min.coverage Minimum coverage of contigs, either single value or threshold for each sample
 #' @param max.size Maximum size of contigs, either single value or threshold for each sample
 #' @param return.filter Whether to return the filter data.frame. Used to adjust thresholds for individual samples and pass to 'filter' argument in second iteration.
+#' @param scaffold Whether to create scaffolds from groups of contigs 
 #' param debug Whether to run in debug mode. Returns a list containing the contigs, filter, and sequences.
 #'
 #' @importFrom ggplot2 ggplot aes geom_vline geom_line geom_point facet_wrap theme theme_classic guides element_line guide_legend
 #'
 #' @export
 #'
-CleanAssemblyToGenome <- function(object, name, 
+WriteAssemblyToGenome <- function(object, name,
                                   filter = NULL,
+                                  samples = NULL,
                                   min.size = 0, 
                                   min.coverage = 0, 
                                   max.size = Inf,
                                   return.filter = FALSE,
+                                  scaffold = FALSE,
+                                  scaffold.length = 50,
                                   debug = FALSE
                                  ) {
 
@@ -635,13 +738,33 @@ CleanAssemblyToGenome <- function(object, name,
         name %in% Assemblies(object)
     )
 
+    # Variables
+    sep.scaffold <- paste(rep('N', scaffold.length), collapse='')
+    slot <- if (scaffold) 'scaffold' else 'genome';
+
     # Input
     data <- Assembly(object, name)
+    samples <- if (is.null(samples)) data$index else samples;
+    if (!all(samples %in% data$index)) stop('Not all samples are part of Assembly(object, name). Aborting...')
+
+    # Output
+    if (scaffold & is.null(object[['scaffold']])) stop('The slot object$scaffold is empty. Please provide scaffold file paths.')
+
+    # Subset samples
+    ind <- match(samples, data$index)
+    contigs <- setNames(data$contig, data$index)[ind]
+    graphs <- setNames(data$graph, data$index)[ind]
+
+    # Require graph
+    ind <- file.exists(graphs) # NO SUPPORT FOR ASSEMBLIES WITHOUT GRAPH !!! (yet)
+    msg <- paste('Samples', paste(samples[!ind], collapse=', '), 'have no graph and will be removed.')
+    if (sum(!ind) > 0) warning(msg)
+    sample <- samples[ind]
+    contigs <- contigs[ind]
+    graphs <- graphs[ind]
 
     # Fetch components
-    graph <- setNames(data$graph, data$index)
-    graph <- graph[file.exists(graph)]
-    graph <- lapply(graph, read_assembly_graph, remove.seqs = FALSE)
+    graph <- lapply(graphs, read_assembly_graph, remove.seqs = FALSE)
     #seqs <- purrr::map(graph, 'sequence')
     #seqs <- Biostrings::DNAStringSet(do.call('c', lapply(seqs, as.character)))
     contigs <- purrr::map(graph, 'segments')
@@ -663,26 +786,30 @@ CleanAssemblyToGenome <- function(object, name,
     contigs$filter[contigs$Group_Length < contigs$length.min] <- 'Discard'
     contigs$filter[contigs$Group_Length > contigs$length.max] <- 'Discard'
     contigs$filter[contigs$Group_Coverage < contigs$cov.min] <- 'Discard'
+    contigs$filter[contigs$Group_Coverage > contigs$cov.max] <- 'Discard'
+
+    # Order
+    contigs$Sample <- factor(contigs$Sample, index(object))
     
     # Plot
     plot <- ggplot(contigs, aes(Group_Length, Coverage, fill = filter, group = Group, shape = Circular)) +
       geom_vline(xintercept = 5e3, linetype = 'dashed') +
-      geom_vline(xintercept = 2e5, linetype = 'dotted') +
-      geom_vline(xintercept = 3e5) +
+      geom_vline(xintercept = 2e5, linetype = 'solid', linewidth = 2, col = 'grey') +
+      #geom_vline(xintercept = 3e5) +
       geom_vline(xintercept = 6e6, linetype = 'dotted') +
       geom_point(aes(size = Length), stroke=.1) +
       geom_line() +
       facet_wrap(~Sample, ncol = 5) +
-      ggplot2::scale_size(range = c(1,5), trans = 'log10') +
+      ggplot2::scale_size(limits = c(1, NA), range = c(.25,5), trans = 'log10') +
+      #ggplot2::scale_size_area(max_size = 5, trans = 'log10') +
       ggplot2::scale_shape_manual(values = c('TRUE'=21, 'FALSE'=24)) +
       ggplot2::scale_y_continuous(trans = 'log10') +
       ggplot2::scale_x_continuous(trans = 'log10') +
       ggplot2::scale_fill_manual(values = c('Keep'='cyan3','Discard'='darkorange')) +
       theme_classic(20) +
       theme(
-          panel.grid.major.x = element_line(),
-          panel.grid.minor.x = element_line(),
-          panel.grid.major.y = element_line()
+          panel.grid.major = ggplot2::element_line(color = 'grey', linewidth = .25),
+          panel.grid.minor = ggplot2::element_line(color = 'grey', linewidth = .1)
       ) +
       guides(
           fill = guide_legend(override.aes = list(size = 5, shape = 21)),
@@ -690,13 +817,27 @@ CleanAssemblyToGenome <- function(object, name,
       )
     suppressMessages(print(plot))
 
+    # Substitute numbers for letters
+    # First set
+    all_groups <- LETTERS
+    
+    # Second set
+    x <- expand.grid(LETTERS, LETTERS)
+    x <- x[, rev(names(x))]
+    all_groups <- c(all_groups, apply(x, 1, paste, collapse=''))
+    
+    # Third set
+    x <- expand.grid(LETTERS, LETTERS, LETTERS)
+    x <- x[, rev(names(x))]
+    all_groups <- c(all_groups, apply(x, 1, paste, collapse=''))
+
     # Apply filter
     index <- contigs$filter == 'Keep'
     contigs <- contigs[index, ]
     #seqs <- seqs[index]
 
     # Set group names
-    groups <- dplyr::group_by(contigs, sample_group, Sample, Group) 
+    groups <- dplyr::group_by(contigs, sample_group, Sample, Group)
     groups <- dplyr::summarize(groups, 
                         Coverage = sum(Length * Coverage) / sum(Length), 
                         Length = sum(Length),
@@ -704,17 +845,17 @@ CleanAssemblyToGenome <- function(object, name,
                        )
     groups <- dplyr::arrange(groups, Sample, dplyr::desc(Length))
     groups <- dplyr::mutate(dplyr::group_by(groups, Sample),
-                            group = LETTERS[1:length(Group)]
+                            group = all_groups[1:length(Group)]
                            )
+    if (any(is.na(groups$group))) stop('NA introduced in groups. Over 18278 contigs in one sample, please check input!')
     lookup <- setNames(groups$group, groups$sample_group)
-    contigs$newgroup <- lookup[contigs$sample_group]    
+    contigs$newgroup <- lookup[contigs$sample_group]
 
-    # Order by new groups
+    # Order
     index <- order(contigs$Sample, contigs$newgroup, contigs$Length, 
                    decreasing = c(FALSE, FALSE, TRUE), 
-                   method = 'radix'
-                  )
-    contigs <- contigs[index, ]
+                   method = 'radix')
+    # contigs <- contigs[index, ] # DEPRECATED, moved ordering to read_assembly_graph.
 
     # Re-name contigs
     contigs <- mutate(dplyr::group_by(contigs, Sample, newgroup),
@@ -723,9 +864,10 @@ CleanAssemblyToGenome <- function(object, name,
 
     # Set sequence names
     seqs <- Biostrings::DNAStringSet(contigs$Sequence)
-    names(seqs) <- paste0(contigs$Sample,
-                          '_',
-                          contigs$newgroup,contigs$newcontig,
+    names(seqs) <- paste0(contigs$Sample,'_',contigs$newgroup,contigs$newcontig,
+                          ' ','sample=',contigs$Sample,
+                          ' ','group=',contigs$newgroup,
+                          ' ','contig=',contigs$newcontig,
                           ' ','length=',contigs$Length,
                           ' ','cov=',contigs$Coverage,
                           ' ','circular=',contigs$Circular
@@ -738,13 +880,41 @@ CleanAssemblyToGenome <- function(object, name,
         msg <- 'Not all sequences have the same length as stated in their header. Aborting...'
         stop(msg)
     }
+
+    # Scaffold groups
+    if (scaffold) {
+        message('Scaffolding...')
+
+        # Concatenate sequences
+        key <- paste(contigs$Sample, contigs$newgroup, sep = '__')
+        seq.scaffold <- as.list(split(seqs, key))
+        seq.names <- names(seq.scaffold)
+        for (i in seq.names) {
+            s <- lapply(seq.scaffold[[i]], as.character)
+            s <- paste(s, collapse = sep.scaffold)
+            names(s) <- i
+            seq.scaffold[[i]] <- s
+        }
+        seq.scaffold <- unlist(seq.scaffold)
+        names(seq.scaffold) <- seq.names
+        seqs <- DNAStringSet(seq.scaffold)
+
+        # Summarize contigs
+        contigs <- group_by(contigs, Sample, newgroup)
+        contigs <- summarize(contigs, 
+                             Name = unique(newgroup),
+                             Coverage = unique(Group_Coverage), 
+                             Contigs = unique(Group_Length),
+                             Length = sum(Length)
+                            )
+    }
     
     # Write FASTA
     msg <- 'Writing FASTA files...'
     message(msg)
-    for (i in data$index) {
+    for (i in samples) {
         ind <- contigs$Sample == i
-        fn <- object$genome[index(object) == i]
+        fn <- object[[slot]][index(object) == i]
         if (length(seqs[ind]) > 0) Biostrings::writeXStringSet(seqs[ind], fn) else unlink(fn)
     }
 
@@ -760,4 +930,101 @@ CleanAssemblyToGenome <- function(object, name,
     if (return.filter) {
         return(filter)
     }
+}
+
+#' Reorient genomes by Dnaapler
+#'
+#' @param file Path to input FASTA
+#' @param output.file Path to output FASTA
+#' @param tmp.dir Path to temporary directory for intermediate files. MMseqs requires permission to execute files (u=rwx) which on some HPC systems can be restricted to /tmp.
+#'
+dnaapler_reorient <- function(file, output.file, tmp.dir = tempdir()) {
+
+    # Check output
+    if (file.exists(output.file)) {
+        message('Output file already exists.')
+        return()
+    }
+
+    # Program
+    check_installed('dnaapler')
+
+    # Check input
+    if (!file.exists(file)) stop('Input file not found.')
+
+    # Variables
+    dir.create(tmp.dir)    
+    OUTDIR <- paste0(tmp.dir,'/dnaapler')
+
+    # Main
+    cmd <- paste(
+        'dnaapler','all',
+        '-i',file,
+        '-o',OUTDIR,
+        '-t',n_proc(),
+        '-f'
+    )
+    system3(cmd)
+
+    # Copy output from temporary directory
+    file.copy(paste0(OUTDIR,'/','dnaapler_reoriented.fasta'), output.file, overwrite = TRUE)
+
+    # Exit 0
+    message('Done.')
+}
+
+#' Run Dnaapler
+#'
+#' Run dnnaapler_reorient for a genomeCollection
+#'
+#' @param object genomeCollection
+#' @param name.from meta.data slot to use as input FASTA
+#' @param name.to meta.data slot to store output FASTA
+#' @param recompute Whether to remove output files and re-compute
+#' @param recompute.sample Names of samples (must match index(object)) to recompute output for
+#'
+RunDnaapler <- function(object, name.from = 'genome', name.to = 'genome_reoriented',
+                        recompute = FALSE,
+                        recompute.sample = NULL,
+                        samples.skip = NULL,
+                        debug = FALSE,
+                        debug.n = 2
+                       ) {
+
+    # Check input
+    if (class(object) != 'genomeCollection') stop('Object must be a genomeCollection.')
+    if (is.null(object[[name.from]])) stop(paste('Slot', name.from, 'not found in metadata(object).'))
+    if (is.null(object[[name.to]])) {
+        object[[name.to]] <- paste0(object$path, name.to, '.fasta')
+        msg <- paste0('Creating slot "', name.to, '"')
+        message(msg)
+    }
+    ind <- file.exists(object[[name.from]])
+    msg <- paste('Genome found for', sum(ind), 'out of', length(ind), 'samples.')
+    message(msg)
+
+    # Variables
+    samples <- index(object)[ind]
+    input.fasta <- object[[name.from]][ind]
+    output.fasta <- object[[name.to]][ind]
+    
+    # Check output
+    ind <- file.exists(output.fasta)
+    missing <- if (recompute) samples else samples[!ind]
+    missing <- if (length(recompute.sample)) recompute.sample else missing # Debug mode
+    missing <- if (debug) head(missing, debug.n) else missing
+    msg <- paste('Output found for', sum(ind), 'samples. Running Dnaapler for', length(missing), 'samples...')
+    message(msg)
+    
+    # Main
+    for (sample in samples) {
+        i <- which(samples == sample)
+        if (!sample %in% missing) next
+        if (sample %in% samples.skip) next
+        cat(sample)
+        dnaapler_reorient(file = input.fasta[[i]], output.file = output.fasta[[i]])
+    }
+    
+    # Exit
+    return(object)
 }

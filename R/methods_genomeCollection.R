@@ -368,6 +368,9 @@ setMethod("[[", c("genomeCollection","ANY","missing"), function(x, i, j, ...) {
   if (i %in% ReadsNames(x)) {
     Reads(x, i)
   } else
+  if (i %in% Assemblies(x)) {
+    Assembly(x, i)
+  } else
   if (i %in% Annotations(x)) {
     Annotation(x, i)
   } else {
