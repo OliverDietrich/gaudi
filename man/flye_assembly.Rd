@@ -13,8 +13,9 @@ flye_assembly(
   nano.hq = NA,
   genome.size = NULL,
   out.dir = NULL,
+  log.file = NULL,
   threads = n_proc(),
-  help = FALSE
+  overwrite = FALSE
 )
 }
 \arguments{

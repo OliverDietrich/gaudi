@@ -6,6 +6,7 @@
 \usage{
 system3(
   command,
+  return.stdout = FALSE,
   max.print = 25,
   log.file = NULL,
   verbose = TRUE,

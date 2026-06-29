@@ -4,7 +4,7 @@
 \alias{peek}
 \title{Peek}
 \usage{
-peek(x, n = 2L)
+peek(x, n = 2)
 }
 \arguments{
 \item{x}{Data.frame}

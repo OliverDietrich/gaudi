@@ -8,6 +8,7 @@ RunPHANOTATE(
   object,
   recompute = FALSE,
   recompute.sample = NULL,
+  samples.skip = NULL,
   debug = FALSE,
   debug.n = 1
 )

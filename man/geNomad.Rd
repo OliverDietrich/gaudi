@@ -4,7 +4,7 @@
 \alias{geNomad}
 \title{Detect MGEs with geNomad}
 \usage{
-geNomad(input.fasta, output.dir, db, force = FALSE)
+geNomad(input.fasta, output.dir, db, force = FALSE, threads = n_proc())
 }
 \arguments{
 \item{input.fasta}{Character, path to input FASTA}

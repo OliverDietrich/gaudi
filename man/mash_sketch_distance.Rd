@@ -5,18 +5,21 @@
 \title{Compute Mash distance between pre-computed sketches}
 \usage{
 mash_sketch_distance(
-  ref.sketch = NULL,
-  query.sketch = NULL,
-  out.file = NULL,
+  query,
+  reference = NULL,
+  out.file,
+  symmetric = FALSE,
   threads = n_proc()
 )
 }
 \arguments{
-\item{ref.sketch}{Character, path to reference sketch}
+\item{query}{Character, path to query sketch}
 
-\item{query.sketch}{Character, path to query sketch}
+\item{reference}{Character, path to reference sketch}
 
 \item{out.file}{Character, file name to output.tsv}
+
+\item{symmetric}{Whether to also compare reference to query, in contrast to only query to ref}
 }
 \description{
 Compute Mash distance between pre-computed sketches

@@ -2,38 +2,44 @@
 % Please edit documentation in R/distance.R
 \name{mash_distance}
 \alias{mash_distance}
-\title{CLI wrapper for Mash}
+\title{Compute Mash distance for genomic sequences}
 \usage{
 mash_distance(
-  input,
-  output.dir,
+  query,
+  reference = NULL,
+  out.dir,
   k = 21,
-  s = 1000,
-  individual.seqs = FALSE,
+  s = 10000,
+  alphabet = "nucleotide",
   threads = n_proc(),
-  recompute.sketch = FALSE,
-  recompute.dist = FALSE
+  recompute = FALSE
 )
 }
 \arguments{
-\item{input}{Character, vector of input FASTA sequences. If names are present, will be used for output IDs.}
+\item{query}{XStringSet or vector of file paths.}
+
+\item{reference}{XStringSet or vector of file paths.}
 
 \item{k}{Integer, k-mer size}
 
 \item{s}{Integer, sketch size}
 
-\item{threads}{Integer, this many threads will be spawned for processing.}
+\item{alphabet}{Character, use 'nucleotide' (ACGT) or 'aminoacid' (A-Z, except BJOUXZ) alphabet}
+
+\item{threads}{Integer, this many threads will be spawned for processing}
+
+\item{output.dir}{Path to output directory}
+
+\item{individual.seqs}{Boolean, whether to sketch individual sequences rather than whole files}
 
 \item{recompute.sketch}{Boolean, whether to re-compute the sketch file}
 
 \item{recompute.dist}{Boolean, whether to re-compute the Mash distances}
-
-\item{output}{Path, output prefix (first input file used if unspecified). The suffix '.msh' will be appended.}
-
-\item{individual}{Boolean, whether to sketch individual sequences rather than whole files}
-
-\item{sketch.archive}{File name, destination of the sketch archive}
 }
 \description{
-Compute Mash distance for genomic sequences
+Estimate sequence identity (average nucleotide identity, ANI) and containment
+(alignment fraction, AF) for biological sequences. Input can be either Biostrings
+objects (DNAStringSet, AAStringSet) or character vector of FASTA file paths. If
+no reference sequences are supplied, query sequences will be compared to each other.
+Sequence names will be derived from ...
 }

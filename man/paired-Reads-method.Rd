@@ -7,8 +7,7 @@
 \S4method{paired}{Reads}(x)
 }
 \description{
-The \code{meta.data} slot in an genomeCollection object holds
-a data.frame containing unstructured information associated to each genome.
+Accessors for the FASTQ files of a Reads object.
 }
 \author{
 Oliver Dietrich

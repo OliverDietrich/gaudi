@@ -8,9 +8,12 @@ CombineAnnotations(
   object,
   name,
   annotations,
-  remove.duplicates = TRUE,
+  db.amrfinder = NULL,
+  db.phrogs = NULL,
+  remove.duplicates = FALSE,
   remove.source = NULL,
-  overwrite = FALSE
+  overwrite = FALSE,
+  debug.sample = NULL
 )
 }
 \arguments{
@@ -20,8 +23,12 @@ CombineAnnotations(
 
 \item{annotations}{A character vector of annotations present in Annotations(object)}
 
+\item{db.amrfinder}{Path to AMRfinder database, linking HMM model names to AMR types (see https://www.ncbi.nlm.nih.gov/pathogens/hmm/#).}
+
 \item{remove.duplicates}{Whether to remove duplicated entries from the final GFF file. Order of the input GFFs will be preserved.
 See help(format_gff3) for more information.}
+
+\item{remove.source}{I came back to this after some time and have no idea what I intended (and no description). UPDATE !!!}
 
 \item{overwrite}{Whether to overwrite existing output files}
 }

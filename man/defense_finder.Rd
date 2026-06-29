@@ -8,18 +8,27 @@ defense_finder(
   file,
   out.dir,
   db.path,
+  annotation = NULL,
   anti.defense = TRUE,
   anti.defense.only = FALSE,
+  preserve.raw = FALSE,
   threads = n_proc(),
-  update.db = FALSE
+  update.db = FALSE,
+  overwrite = FALSE
 )
 }
 \arguments{
 \item{file}{FASTA file containing either genome (FNA) or protein (FAA) sequences. Not sure about genes (FFN)}
 
-\item{out.dir}{Character, path to target directory.}
+\item{out.dir}{Path to target directory.}
 
-\item{db.path}{Character, path to defense-system-model database (mentioned in https://github.com/mdmparis/defense-finder/issues/8).}
+\item{db.path}{Path to defense-system-model database (mentioned in https://github.com/mdmparis/defense-finder/issues/8).}
+
+\item{annotation}{GFF3 file containing annotations matching the proteins (MUST BE TESTED for genome.fna). Used for output formatting.}
+
+\item{anti.defense}{only Whether to only search for anti-defense genes}
+
+\item{preserve.raw}{Whether to preserve intermediate/raw data files (HMMsearch, etc.)}
 
 \item{threads}{Numeric, number of threads.}
 

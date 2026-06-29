@@ -4,10 +4,21 @@
 \alias{read_assembly_graph}
 \title{Read assembly graph}
 \usage{
-read_assembly_graph(input.graph = NULL, remove.seqs = TRUE)
+read_assembly_graph(
+  input.graph,
+  remove.seqs = TRUE,
+  random.walk.steps.per.edge = 500,
+  seed = 42
+)
 }
 \arguments{
 \item{input.graph}{Character, path to input file}
+
+\item{remove.seqs}{Whether to remove sequences from segments (will be included as a DNAStringSet)}
+
+\item{random.walk.steps.per.edge}{How many steps to take for each node in the assembly graph}
+
+\item{seed}{Numeric, seed to stabilize results of the random walk}
 }
 \description{
 Read assembly graph from .gfa file. File specification is available at https://github.com/GFA-spec/GFA-spec.

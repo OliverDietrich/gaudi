@@ -9,7 +9,8 @@ RunGenomad(
   recompute = FALSE,
   recompute.sample = NULL,
   debug = FALSE,
-  debug.n = 1
+  debug.n = 1,
+  ...
 )
 }
 \arguments{
